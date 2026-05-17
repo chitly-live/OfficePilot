@@ -670,18 +670,26 @@ export const leadCsvRowSchema = z
         .default(LeadSource.MANUAL),
     ),
     tags: z.preprocess(
-      emptyToUndef,
-      z
-        .string()
-        .transform((val) =>
-          val
+      (val) => {
+        // Accept both shapes:
+        //   • Pre-parsed string[] from the in-browser CSV import UI
+        //     (which splits on ";" client-side before sending).
+        //   • Raw string from a direct CSV upload (anything that hits
+        //     `/api/leads/import` with the literal CSV cell value).
+        // Empty string / whitespace-only collapses to `undefined` so
+        // the default ([]) kicks in.
+        if (Array.isArray(val)) return val;
+        if (typeof val === 'string') {
+          const trimmed = val.trim();
+          if (trimmed.length === 0) return undefined;
+          return trimmed
             .split(';')
             .map((t) => t.trim())
-            .filter(Boolean),
-        )
-        .pipe(tagsField)
-        .optional()
-        .default([]),
+            .filter(Boolean);
+        }
+        return undefined;
+      },
+      tagsField.optional().default([]),
     ),
     notes: z.preprocess(emptyToUndef, notesField.optional()),
     // v0.1.4 — Chitly-spreadsheet columns. These are intentionally
@@ -719,20 +727,23 @@ export const leadCsvRowSchema = z
     ),
     activeSince: z.preprocess(emptyToUndef, activeSinceField.optional()),
     languages: z.preprocess(
-      emptyToUndef,
-      z
-        .string()
-        .transform((val) =>
-          // Comma-separated for the spreadsheet ("Hindi, Marathi, English");
-          // semicolons also accepted for symmetry with the `tags` column.
-          val
+      (val) => {
+        // Same dual-shape acceptance as `tags` above. The in-browser
+        // import UI sends a pre-parsed string[] (it splits on "," for
+        // the chip preview); direct API clients can still POST the raw
+        // "Hindi, Marathi, English" string and we'll split here.
+        if (Array.isArray(val)) return val;
+        if (typeof val === 'string') {
+          const trimmed = val.trim();
+          if (trimmed.length === 0) return undefined;
+          return trimmed
             .split(/[;,]/)
             .map((l) => l.trim())
-            .filter(Boolean),
-        )
-        .pipe(languagesField)
-        .optional()
-        .default([]),
+            .filter(Boolean);
+        }
+        return undefined;
+      },
+      languagesField.optional().default([]),
     ),
     extraDetails: z.preprocess(emptyToUndef, extraDetailsField.optional()),
     phoneType: z.preprocess(
