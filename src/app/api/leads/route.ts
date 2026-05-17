@@ -246,6 +246,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ...(input.phoneType !== undefined ? { phoneType: input.phoneType } : {}),
         notOnWhatsapp: input.notOnWhatsapp,
         ...(input.address !== undefined ? { address: input.address } : {}),
+        // Optional `createdAt` override (matches the team's spreadsheet
+        // "Date" column). Omitted → Prisma's @default(now()) kicks in.
+        ...(input.createdAt !== undefined ? { createdAt: input.createdAt } : {}),
         ownerId: resolvedOwnerId,
         createdById: session.userId,
       },

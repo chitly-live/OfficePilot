@@ -369,6 +369,11 @@ export default async function LeadDetailPage({ params }: PageProps) {
                       value: leadPublic.value,
                       tags: leadPublic.tags,
                       ownerId: leadPublic.ownerId,
+                      // YYYY-MM-DD form of the lead's current `createdAt`
+                      // so the Date input can pre-populate and detect changes.
+                      leadDate: new Date(leadPublic.createdAt)
+                        .toISOString()
+                        .slice(0, 10),
                       followUpDate,
                       followUpTime,
                       notes: leadPublic.notes,

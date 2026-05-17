@@ -221,6 +221,9 @@ export async function PATCH(
       data.notOnWhatsapp = input.notOnWhatsapp;
     }
     if (input.address !== undefined) data.address = input.address;
+    // Admin-only override of the lead's "Date" — backdate correction
+    // (matches the spreadsheet "Date" column semantics).
+    if (input.createdAt !== undefined) data.createdAt = input.createdAt;
     // Auto-stamp `convertedAt` on the first transition to CONVERTED.
     // We don't accept the field from clients (the schema rejects it),
     // so fabrication isn't possible — only the route can set it, and

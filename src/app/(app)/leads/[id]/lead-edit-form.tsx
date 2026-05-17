@@ -186,6 +186,11 @@ const formSchema = z
       .or(z.literal('')),
     /** Sentinel `OWNER_UNASSIGNED` means "no owner". */
     ownerId: z.string().min(1),
+    /** Backdate override — when the lead actually came in. */
+    leadDate: z
+      .string()
+      .optional()
+      .or(z.literal('')),
     followUpDate: z
       .string()
       .optional()
@@ -302,6 +307,8 @@ export interface LeadEditFormProps {
     value: number | null;
     tags: string[];
     ownerId: string | null;
+    /** YYYY-MM-DD form of the lead's current `createdAt` for backdate editing. */
+    leadDate: string;
     /** YYYY-MM-DD or empty string. */
     followUpDate: string;
     /** HH:MM or empty string. */
@@ -346,6 +353,7 @@ export function LeadEditForm({
           : String(initialValues.value),
       tags: initialValues.tags,
       ownerId: initialValues.ownerId ?? OWNER_UNASSIGNED,
+      leadDate: initialValues.leadDate,
       followUpDate: initialValues.followUpDate,
       followUpTime: initialValues.followUpTime,
       notes: initialValues.notes ?? '',
@@ -432,6 +440,14 @@ export function LeadEditForm({
       values.ownerId === OWNER_UNASSIGNED ? null : values.ownerId;
     if (ownerIdNext !== (initialValues.ownerId ?? null)) {
       payload.ownerId = ownerIdNext;
+    }
+
+    // Backdate "Date" override — only PATCH when the YYYY-MM-DD differs
+    // from the lead's current `createdAt` calendar date. Empty leadDate
+    // means "leave it alone"; we never send the wire-clearing `null` here.
+    const leadDateNext = (values.leadDate ?? '').trim();
+    if (leadDateNext !== '' && leadDateNext !== initialValues.leadDate) {
+      payload.createdAt = new Date(`${leadDateNext}T00:00:00`).toISOString();
     }
 
     // Follow-up date+time: combine and compare ISO strings.
@@ -998,6 +1014,29 @@ export function LeadEditForm({
                   value={field.value}
                   onChange={field.onChange}
                   disabled={formDisabled}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="leadDate"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                Date{' '}
+                <span className="text-muted-foreground">
+                  (when the lead came in — backdate if needed)
+                </span>
+              </FormLabel>
+              <FormControl>
+                <Input
+                  type="date"
+                  disabled={formDisabled}
+                  {...field}
                 />
               </FormControl>
               <FormMessage />

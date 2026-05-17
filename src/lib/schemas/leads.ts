@@ -417,6 +417,13 @@ export const leadCreateSchema = z
     phoneType: phoneTypeField.optional().nullable(),
     notOnWhatsapp: z.coerce.boolean().optional().default(false),
     address: addressField.optional(),
+    /**
+     * Optional `createdAt` override — admins backdate leads to the date
+     * the lead actually came in (matches the "Date" column in the team's
+     * Excel sheet). Omit to use the server's `now()`. The CSV import
+     * route already supports this; the manual form gets it here too.
+     */
+    createdAt: isoDateTimeField.optional(),
   })
   .refine((value) => Boolean(value.phone) || Boolean(value.email), {
     message: 'Either phone or email is required',
@@ -475,6 +482,12 @@ export const leadUpdateSchema = z
     phoneType: phoneTypeField.nullable().optional(),
     notOnWhatsapp: z.coerce.boolean().optional(),
     address: addressField.nullable().optional(),
+    /**
+     * Optional `createdAt` override — admins can correct a backdated
+     * lead's "Date" without nuking-and-recreating the row. Same field
+     * the create schema accepts.
+     */
+    createdAt: isoDateTimeField.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'At least one field must be provided',

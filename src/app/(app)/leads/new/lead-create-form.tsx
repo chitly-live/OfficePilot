@@ -185,6 +185,15 @@ const formSchema = z
       .optional()
       .or(z.literal('')),
     ownerId: z.string().min(1, 'Owner is required'),
+    /**
+     * Optional backdate for the lead's "Date" — when the lead actually
+     * came in (matches the team's Excel "Date" column). Empty → server
+     * uses `now()`. Stored as `YYYY-MM-DD`; combined to a Date at submit.
+     */
+    leadDate: z
+      .string()
+      .optional()
+      .or(z.literal('')),
     followUpDate: z
       .string()
       .optional()
@@ -309,6 +318,7 @@ export function LeadCreateForm({
       value: '',
       tags: [],
       ownerId: currentUserId,
+      leadDate: '',
       followUpDate: '',
       followUpTime: '',
       notes: '',
@@ -360,6 +370,15 @@ export function LeadCreateForm({
         followUpDate,
         (values.followUpTime ?? '').trim(),
       );
+    }
+
+    // Optional lead "Date" override — backdate to when the lead actually
+    // came in (matches Chitly's Excel "Date" column). Empty → server's now().
+    const leadDate = (values.leadDate ?? '').trim();
+    if (leadDate !== '') {
+      // YYYY-MM-DD from the <input type="date"> becomes a midnight-IST-ish
+      // ISO string. The API parses it via `isoDateTimeField`.
+      payload.createdAt = new Date(`${leadDate}T00:00:00`).toISOString();
     }
 
     // v0.1.4 — Profile (optional) fields. Empty strings are stripped
@@ -833,6 +852,29 @@ export function LeadCreateForm({
                   onChange={field.onChange}
                   disabled={isSubmitting}
                   placeholder="Press Enter to add (e.g. hot, demo-requested)"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="leadDate"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                Date{' '}
+                <span className="text-muted-foreground">
+                  (when the lead came in — leave blank for today)
+                </span>
+              </FormLabel>
+              <FormControl>
+                <Input
+                  type="date"
+                  disabled={isSubmitting}
+                  {...field}
                 />
               </FormControl>
               <FormMessage />
