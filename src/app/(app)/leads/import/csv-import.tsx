@@ -110,7 +110,8 @@ type LeadField =
   | 'phoneType'
   | 'notOnWhatsapp'
   | 'source'
-  | 'tags';
+  | 'tags'
+  | 'createdAt';
 
 const LEAD_FIELDS: ReadonlyArray<{
   key: LeadField;
@@ -118,6 +119,7 @@ const LEAD_FIELDS: ReadonlyArray<{
   required: boolean;
   hint?: string;
 }> = [
+  { key: 'createdAt', label: 'Date', required: false, hint: 'When the lead came in — e.g. 31-Jan-2026' },
   { key: 'name', label: 'Name', required: true },
   { key: 'phone', label: 'Phone', required: false, hint: 'Phone or email required' },
   { key: 'email', label: 'Email', required: false, hint: 'Phone or email required' },
@@ -185,11 +187,84 @@ const HEADER_HINTS: Record<LeadField, string[]> = {
   ],
   source: ['source', 'leadsource', 'channel'],
   tags: ['tags', 'labels', 'tag'],
+  createdAt: [
+    'date',
+    'createdat',
+    'created',
+    'createddate',
+    'leaddate',
+    'entrydate',
+    'addedon',
+  ],
 };
 
 /** Normalize a header for hint matching: lowercase + strip non-alnum. */
 function normalizeHeader(header: string): string {
   return header.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Parse spreadsheet date strings into a Date. Mirrors the server's
+ * `parseSpreadsheetDate` so the preview UI displays a consistent date.
+ *
+ * Accepted formats:
+ *   • ISO (`2026-01-31`, `2026-01-31T00:00:00Z`)
+ *   • `31-Jan-2026`, `31 Jan 2026`, `31/Jan/2026`
+ *   • `31-01-2026`, `31/01/2026` (DD/MM/YYYY — Indian convention)
+ *   • `1/31/2026` (US-style fallback)
+ *
+ * Returns `null` for un-parseable input — caller drops the field.
+ */
+const MONTH_BY_ABBREV: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+function parseSpreadsheetDate(raw: string): Date | null {
+  const v = raw.trim();
+  if (v === '') return null;
+
+  // ISO first — fast path.
+  const iso = new Date(v);
+  if (!Number.isNaN(iso.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(v)) return iso;
+
+  // DD-Mon-YYYY or DD Mon YYYY or DD/Mon/YYYY
+  const monthMatch = v.match(/^(\d{1,2})[-\/\s]([A-Za-z]{3,})[-\/\s](\d{2,4})$/);
+  if (monthMatch) {
+    const day = parseInt(monthMatch[1], 10);
+    const monKey = monthMatch[2].slice(0, 3).toLowerCase();
+    const yearRaw = parseInt(monthMatch[3], 10);
+    const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
+    const month = MONTH_BY_ABBREV[monKey];
+    if (month !== undefined && day >= 1 && day <= 31) {
+      return new Date(year, month, day);
+    }
+  }
+
+  // DD-MM-YYYY or DD/MM/YYYY (Indian default) and US-style MM/DD/YYYY.
+  const numMatch = v.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/);
+  if (numMatch) {
+    const a = parseInt(numMatch[1], 10);
+    const b = parseInt(numMatch[2], 10);
+    const yearRaw = parseInt(numMatch[3], 10);
+    const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
+    // If a > 12, it must be a day → DD/MM/YYYY. Else assume DD/MM/YYYY
+    // (Indian convention) but tolerate US MM/DD when day is invalid.
+    let day = a;
+    let month = b - 1;
+    if (a > 12 && b <= 12) {
+      day = a;
+      month = b - 1;
+    } else if (b > 12 && a <= 12) {
+      day = b;
+      month = a - 1;
+    }
+    if (month >= 0 && month <= 11 && day >= 1 && day <= 31) {
+      return new Date(year, month, day);
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -298,6 +373,15 @@ function buildRow(
       else if (lc === 'android') out.phoneType = 'Android';
       else if (lc === 'other') out.phoneType = 'Other';
       else out.phoneType = trimmed;
+    } else if (field === 'createdAt') {
+      // Parse common spreadsheet date formats and emit an ISO string.
+      // The server's `parseSpreadsheetDate` (see `/api/leads/import`)
+      // also accepts the raw string, but normalising here makes the
+      // preview table render the date nicely.
+      const parsed = parseSpreadsheetDate(trimmed);
+      if (parsed) {
+        out.createdAt = parsed.toISOString();
+      }
     } else {
       out[field] = trimmed;
     }
