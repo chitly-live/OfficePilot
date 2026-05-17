@@ -275,6 +275,123 @@ describe('POST /api/leads/import — happy path + partial success', () => {
 });
 
 // ---------------------------------------------------------------------------
+// v0.1.4 — Chitly spreadsheet column recognition
+// ---------------------------------------------------------------------------
+
+describe('POST /api/leads/import — v0.1.4 Chitly spreadsheet headers', () => {
+  it('imports a row keyed by the user-facing CSV headers (Date, Name, WhatsApp/Telegram Contact, Address, Age, Active Since, Language, Extra Details, Phone Type)', async () => {
+    const { user: admin } = await createTestUser({ role: 'ADMIN' });
+    await setSession({ userId: admin.id, role: 'ADMIN' });
+
+    // Mirrors the exact column headers in the Chitly team's existing
+    // Excel sheet. The route's canonicalizeRow step normalizes header
+    // casing/whitespace/punctuation so each cell lands on the right
+    // Prisma column.
+    const res = await POST(
+      buildJsonRequest('POST', 'http://test/api/leads/import', {
+        rows: [
+          {
+            Date: '31-Jan-2026',
+            Name: 'Test User',
+            'WhatsApp/Telegram Contact': '9876543210',
+            Address: 'Pune, Maharashtra',
+            Age: '29',
+            'Active Since': '10 Days',
+            Language: 'Hindi, English',
+            'Extra Details': 'IT Job - Unmarried',
+            'Phone Type': 'iPhone',
+          },
+        ],
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = await getJson<ImportSummary>(res);
+    expect(body!.totalRows).toBe(1);
+    expect(body!.importedRows).toBe(1);
+    expect(body!.skippedRows).toBe(0);
+    expect(body!.errors).toEqual([]);
+    expect(body!.duplicates).toEqual([]);
+
+    const stored = await prisma.lead.findFirst({
+      where: { name: 'Test User' },
+    });
+    expect(stored).not.toBeNull();
+    expect(stored!.name).toBe('Test User');
+    expect(stored!.phone).toBe('9876543210');
+    expect(stored!.address).toBe('Pune, Maharashtra');
+    expect(stored!.age).toBe(29);
+    expect(stored!.activeSince).toBe('10 Days');
+    expect(stored!.languages).toEqual(['Hindi', 'English']);
+    expect(stored!.extraDetails).toBe('IT Job - Unmarried');
+    expect(stored!.phoneType).toBe('iPhone');
+    // notOnWhatsapp defaults to false when omitted.
+    expect(stored!.notOnWhatsapp).toBe(false);
+    // The "Date" column propagates to createdAt — preserving the
+    // operator's original timeline.
+    expect(stored!.createdAt.toISOString().slice(0, 10)).toBe('2026-01-31');
+  });
+
+  it('recognizes the "Not on WhatsApp" header and coerces truthy/falsy cells', async () => {
+    const { user: admin } = await createTestUser({ role: 'ADMIN' });
+    await setSession({ userId: admin.id, role: 'ADMIN' });
+
+    const res = await POST(
+      buildJsonRequest('POST', 'http://test/api/leads/import', {
+        rows: [
+          {
+            Name: 'No WA Lead',
+            Phone: '+91 99 1111 2222',
+            'Not on WhatsApp': 'Yes',
+          },
+          {
+            Name: 'Has WA Lead',
+            Phone: '+91 99 3333 4444',
+            'Not on WhatsApp': 'no',
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await getJson<ImportSummary>(res);
+    expect(body!.importedRows).toBe(2);
+
+    const rows = await prisma.lead.findMany({
+      orderBy: { name: 'asc' },
+      select: { name: true, notOnWhatsapp: true },
+    });
+    expect(rows).toEqual([
+      { name: 'Has WA Lead', notOnWhatsapp: false },
+      { name: 'No WA Lead', notOnWhatsapp: true },
+    ]);
+  });
+
+  it('coerces an unknown "Phone Type" cell to "Other" rather than rejecting the row', async () => {
+    const { user: admin } = await createTestUser({ role: 'ADMIN' });
+    await setSession({ userId: admin.id, role: 'ADMIN' });
+
+    const res = await POST(
+      buildJsonRequest('POST', 'http://test/api/leads/import', {
+        rows: [
+          {
+            Name: 'Old Phone',
+            Phone: '+91 99 5555 6666',
+            'Phone Type': 'BlackBerry',
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await getJson<ImportSummary>(res);
+    expect(body!.importedRows).toBe(1);
+    expect(body!.errors).toEqual([]);
+
+    const stored = await prisma.lead.findFirst({ where: { name: 'Old Phone' } });
+    expect(stored!.phoneType).toBe('Other');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Property 5 — CSV import deduplication is idempotent
 // ---------------------------------------------------------------------------
 

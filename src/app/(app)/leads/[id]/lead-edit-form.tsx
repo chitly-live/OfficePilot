@@ -32,6 +32,7 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Form,
   FormControl,
@@ -53,6 +54,15 @@ import { Textarea } from '@/components/ui/textarea';
 
 import { TagsInput } from '../tags-input';
 import type { OwnerOption } from '../new/lead-create-form';
+
+// ---------------------------------------------------------------------------
+// v0.1.4 — phone-type options
+// ---------------------------------------------------------------------------
+
+/** Sentinel for the "(none)" Select item — Radix rejects empty-string
+ *  values. Translated to `null` on submit. */
+const PHONE_TYPE_NONE = '__none__';
+const PHONE_TYPE_OPTIONS = ['iPhone', 'Android', 'Other'] as const;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -131,6 +141,49 @@ const formSchema = z
         'Value must be a non-negative number',
       ),
     tags: z.array(z.string()).max(30, 'A lead may have at most 30 tags'),
+    // v0.1.4 — spreadsheet fields. Identical shape to lead-create-form.
+    age: z
+      .string()
+      .trim()
+      .optional()
+      .or(z.literal(''))
+      .refine(
+        (val) => {
+          if (!val) return true;
+          const n = Number(val);
+          return Number.isInteger(n) && n > 0 && n < 200;
+        },
+        'Age must be a whole number between 1 and 199',
+      ),
+    activeSince: z
+      .string()
+      .trim()
+      .max(100, 'Active since must be 100 characters or fewer')
+      .optional()
+      .or(z.literal('')),
+    languages: z
+      .array(z.string())
+      .max(20, 'A lead may have at most 20 languages'),
+    extraDetails: z
+      .string()
+      .trim()
+      .max(500, 'Extra details must be 500 characters or fewer')
+      .optional()
+      .or(z.literal('')),
+    phoneType: z
+      .union([
+        z.literal(''),
+        z.literal(PHONE_TYPE_NONE),
+        z.enum(PHONE_TYPE_OPTIONS),
+      ])
+      .optional(),
+    notOnWhatsapp: z.boolean(),
+    address: z
+      .string()
+      .trim()
+      .max(1000, 'Address must be 1000 characters or fewer')
+      .optional()
+      .or(z.literal('')),
     /** Sentinel `OWNER_UNASSIGNED` means "no owner". */
     ownerId: z.string().min(1),
     followUpDate: z
@@ -254,6 +307,15 @@ export interface LeadEditFormProps {
     /** HH:MM or empty string. */
     followUpTime: string;
     notes: string | null;
+    // v0.1.4 — spreadsheet fields. All optional (older rows pre-date
+    // the migration); pre-populated from the lead's current values.
+    age?: number | null;
+    activeSince?: string | null;
+    languages?: string[];
+    extraDetails?: string | null;
+    phoneType?: string | null;
+    notOnWhatsapp?: boolean;
+    address?: string | null;
   };
 }
 
@@ -287,6 +349,23 @@ export function LeadEditForm({
       followUpDate: initialValues.followUpDate,
       followUpTime: initialValues.followUpTime,
       notes: initialValues.notes ?? '',
+      // v0.1.4 — Profile section defaults from the existing lead.
+      age:
+        initialValues.age === null || initialValues.age === undefined
+          ? ''
+          : String(initialValues.age),
+      activeSince: initialValues.activeSince ?? '',
+      languages: initialValues.languages ?? [],
+      extraDetails: initialValues.extraDetails ?? '',
+      phoneType:
+        initialValues.phoneType &&
+        (PHONE_TYPE_OPTIONS as readonly string[]).includes(
+          initialValues.phoneType,
+        )
+          ? (initialValues.phoneType as (typeof PHONE_TYPE_OPTIONS)[number])
+          : PHONE_TYPE_NONE,
+      notOnWhatsapp: initialValues.notOnWhatsapp ?? false,
+      address: initialValues.address ?? '',
     },
   });
 
@@ -377,6 +456,55 @@ export function LeadEditForm({
     const initNotes = initialValues.notes ?? '';
     if (notesTrim !== initNotes) {
       payload.notes = notesTrim === '' ? null : notesTrim;
+    }
+
+    // -------- v0.1.4 Profile fields --------
+
+    const ageRaw = (values.age ?? '').trim();
+    const initAge = initialValues.age ?? null;
+    if (ageRaw === '' && initAge !== null) {
+      payload.age = null;
+    } else if (ageRaw !== '' && Number(ageRaw) !== initAge) {
+      payload.age = Number(ageRaw);
+    }
+
+    const activeSinceTrim = (values.activeSince ?? '').trim();
+    const initActiveSince = initialValues.activeSince ?? '';
+    if (activeSinceTrim !== initActiveSince) {
+      payload.activeSince = activeSinceTrim === '' ? null : activeSinceTrim;
+    }
+
+    const initLanguages = initialValues.languages ?? [];
+    const languagesChanged =
+      values.languages.length !== initLanguages.length ||
+      values.languages.some((l, i) => l !== initLanguages[i]);
+    if (languagesChanged) payload.languages = values.languages;
+
+    const extraDetailsTrim = (values.extraDetails ?? '').trim();
+    const initExtraDetails = initialValues.extraDetails ?? '';
+    if (extraDetailsTrim !== initExtraDetails) {
+      payload.extraDetails =
+        extraDetailsTrim === '' ? null : extraDetailsTrim;
+    }
+
+    const phoneTypeRaw = values.phoneType ?? '';
+    const phoneTypeNext =
+      phoneTypeRaw === '' || phoneTypeRaw === PHONE_TYPE_NONE
+        ? null
+        : phoneTypeRaw;
+    if (phoneTypeNext !== (initialValues.phoneType ?? null)) {
+      payload.phoneType = phoneTypeNext;
+    }
+
+    const notOnWhatsappNext = values.notOnWhatsapp === true;
+    if (notOnWhatsappNext !== (initialValues.notOnWhatsapp ?? false)) {
+      payload.notOnWhatsapp = notOnWhatsappNext;
+    }
+
+    const addressTrim = (values.address ?? '').trim();
+    const initAddress = initialValues.address ?? '';
+    if (addressTrim !== initAddress) {
+      payload.address = addressTrim === '' ? null : addressTrim;
     }
 
     if (Object.keys(payload).length === 0) {
@@ -501,26 +629,58 @@ export function LeadEditForm({
           />
         </div>
 
+        <FormField
+          control={form.control}
+          name="address"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                Address{' '}
+                <span className="text-muted-foreground">(optional)</span>
+              </FormLabel>
+              <FormControl>
+                <Textarea
+                  rows={2}
+                  placeholder="Pune, Maharashtra"
+                  autoComplete="off"
+                  disabled={formDisabled}
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField
-            control={form.control}
-            name="city"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>
-                  City <span className="text-muted-foreground">(optional)</span>
-                </FormLabel>
-                <FormControl>
-                  <Input
-                    autoComplete="off"
-                    disabled={formDisabled}
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {/* Backwards-data fallback: only render the City editor when
+              the lead already has a `city` value but no `address`. New
+              edits should go into Address instead. */}
+          {(initialValues.city ?? '').trim() !== '' &&
+          (initialValues.address ?? '').trim() === '' ? (
+            <FormField
+              control={form.control}
+              name="city"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    City{' '}
+                    <span className="text-muted-foreground">
+                      (legacy — superseded by Address)
+                    </span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      autoComplete="off"
+                      disabled={formDisabled}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          ) : null}
 
           <FormField
             control={form.control}
@@ -671,6 +831,159 @@ export function LeadEditForm({
             </FormItem>
           )}
         />
+
+        {/* ----------------------------------------------------------
+             v0.1.4 — Profile (optional) section.
+             Same field set as the create form so the read/write
+             surfaces stay aligned to the Chitly team's spreadsheet.
+             ---------------------------------------------------------- */}
+        <fieldset className="space-y-4 rounded-md border bg-muted/30 p-4">
+          <legend className="px-1 text-sm font-medium text-foreground">
+            Profile{' '}
+            <span className="text-muted-foreground">(optional)</span>
+          </legend>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <FormField
+              control={form.control}
+              name="age"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Age</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={199}
+                      step={1}
+                      placeholder="29"
+                      disabled={formDisabled}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="activeSince"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Active Since</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="10 Days, 6 months, etc."
+                      autoComplete="off"
+                      disabled={formDisabled}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="phoneType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Phone Type</FormLabel>
+                  <Select
+                    value={
+                      field.value === '' || field.value === undefined
+                        ? PHONE_TYPE_NONE
+                        : field.value
+                    }
+                    onValueChange={field.onChange}
+                    disabled={formDisabled}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="(none)" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value={PHONE_TYPE_NONE}>(none)</SelectItem>
+                      {PHONE_TYPE_OPTIONS.map((v) => (
+                        <SelectItem key={v} value={v}>
+                          {v}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <FormField
+            control={form.control}
+            name="languages"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Languages</FormLabel>
+                <FormControl>
+                  <TagsInput
+                    value={field.value}
+                    onChange={field.onChange}
+                    disabled={formDisabled}
+                    placeholder="Press Enter to add (e.g. Hindi, English)"
+                    maxTags={20}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="extraDetails"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Extra Details</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="IT Job - Unmarried - Finding Someone"
+                    autoComplete="off"
+                    disabled={formDisabled}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="notOnWhatsapp"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-center gap-2 space-y-0">
+                <FormControl>
+                  <Checkbox
+                    id="lead-edit-not-whatsapp"
+                    checked={field.value}
+                    onCheckedChange={(v) => field.onChange(v === true)}
+                    disabled={formDisabled}
+                  />
+                </FormControl>
+                <FormLabel
+                  htmlFor="lead-edit-not-whatsapp"
+                  className="cursor-pointer text-sm font-normal"
+                >
+                  Not on WhatsApp
+                </FormLabel>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </fieldset>
 
         <FormField
           control={form.control}

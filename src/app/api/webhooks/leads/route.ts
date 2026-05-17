@@ -279,6 +279,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ...(data.utmSource !== undefined ? { utmSource: data.utmSource } : {}),
       ...(data.utmMedium !== undefined ? { utmMedium: data.utmMedium } : {}),
       ...(data.utmCampaign !== undefined ? { utmCampaign: data.utmCampaign } : {}),
+      // v0.1.4 — Chitly-spreadsheet fields. The webhook schema's
+      // `transform` already provides camelCase aliases (`activeSince`,
+      // `phoneType`, `notOnWhatsapp` etc.). Defaults
+      // (`languages: []`, `notOnWhatsapp: false`) mirror the Prisma
+      // column defaults so an omitted field round-trips identically
+      // whether the lead arrives via this webhook or `POST /api/leads`.
+      ...(data.age !== undefined ? { age: data.age } : {}),
+      ...(data.activeSince !== undefined ? { activeSince: data.activeSince } : {}),
+      languages: data.languages,
+      ...(data.extraDetails !== undefined ? { extraDetails: data.extraDetails } : {}),
+      ...(data.phoneType !== undefined ? { phoneType: data.phoneType } : {}),
+      notOnWhatsapp: data.notOnWhatsapp,
+      ...(data.address !== undefined ? { address: data.address } : {}),
       createdById: systemCreator.id,
       // Owner is left null — an admin can claim/assign from /leads.
       ownerId: null,

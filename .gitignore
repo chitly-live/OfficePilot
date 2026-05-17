@@ -58,3 +58,6 @@ yarn-error.log*
 
 # OS-specific
 Thumbs.db
+
+# Internal infra/server documentation (contains IPs, ports, service topology — do NOT publish)
+/0[0-9]-*.md

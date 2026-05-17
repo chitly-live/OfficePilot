@@ -209,6 +209,18 @@ export async function PATCH(
     if (input.nextFollowUpAt !== undefined) {
       data.nextFollowUpAt = input.nextFollowUpAt;
     }
+    // v0.1.4 — Chitly-spreadsheet fields. Each splatted under
+    // `!== undefined` so an explicit `null` (operator clearing the
+    // cell) still reaches Prisma; only omitted keys are skipped.
+    if (input.age !== undefined) data.age = input.age;
+    if (input.activeSince !== undefined) data.activeSince = input.activeSince;
+    if (input.languages !== undefined) data.languages = input.languages;
+    if (input.extraDetails !== undefined) data.extraDetails = input.extraDetails;
+    if (input.phoneType !== undefined) data.phoneType = input.phoneType;
+    if (input.notOnWhatsapp !== undefined) {
+      data.notOnWhatsapp = input.notOnWhatsapp;
+    }
+    if (input.address !== undefined) data.address = input.address;
     // Auto-stamp `convertedAt` on the first transition to CONVERTED.
     // We don't accept the field from clients (the schema rejects it),
     // so fabrication isn't possible — only the route can set it, and

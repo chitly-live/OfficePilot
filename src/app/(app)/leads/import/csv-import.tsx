@@ -90,6 +90,11 @@ const UNMAPPED = '__unmapped__';
  * The target lead fields the import API understands (per the route's
  * `leadCsvRowSchema`). Order here drives the order in the mapping UI
  * and the preview table.
+ *
+ * v0.1.4 — extended with the 7 spreadsheet fields (`age`, `activeSince`,
+ * `languages`, `extraDetails`, `phoneType`, `notOnWhatsapp`, `address`)
+ * and a `date` column so an import of the Chitly team's existing
+ * spreadsheet auto-maps cleanly.
  */
 type LeadField =
   | 'name'
@@ -97,6 +102,13 @@ type LeadField =
   | 'email'
   | 'company'
   | 'city'
+  | 'address'
+  | 'age'
+  | 'activeSince'
+  | 'languages'
+  | 'extraDetails'
+  | 'phoneType'
+  | 'notOnWhatsapp'
   | 'source'
   | 'tags';
 
@@ -111,6 +123,13 @@ const LEAD_FIELDS: ReadonlyArray<{
   { key: 'email', label: 'Email', required: false, hint: 'Phone or email required' },
   { key: 'company', label: 'Company', required: false },
   { key: 'city', label: 'City', required: false },
+  { key: 'address', label: 'Address', required: false, hint: 'Free-form' },
+  { key: 'age', label: 'Age', required: false, hint: 'Whole number' },
+  { key: 'activeSince', label: 'Active Since', required: false, hint: 'e.g. "10 Days"' },
+  { key: 'languages', label: 'Languages', required: false, hint: 'Comma-separated' },
+  { key: 'extraDetails', label: 'Extra Details', required: false },
+  { key: 'phoneType', label: 'Phone Type', required: false, hint: 'iPhone / Android / Other' },
+  { key: 'notOnWhatsapp', label: 'Not on WhatsApp', required: false, hint: 'true / false / yes / no' },
   { key: 'source', label: 'Source', required: false, hint: 'Defaults to MANUAL' },
   { key: 'tags', label: 'Tags', required: false, hint: 'Semicolon-separated' },
 ];
@@ -120,13 +139,50 @@ const LEAD_FIELDS: ReadonlyArray<{
  * (lowercased, alphanumerics only) that should map to the given
  * lead field. The order matters: the first match wins, so we put the
  * canonical names first and looser variants after.
+ *
+ * v0.1.4 — added hints for `address`, `age`, `activeSince`, `languages`,
+ * `extraDetails`, `phoneType`, `notOnWhatsapp`. The `phone` hints
+ * include `whatsappnumber` / `whatsapptelegramcontact` so the Chitly
+ * team's "WhatsApp/Telegram Contact" header auto-maps to phone.
  */
 const HEADER_HINTS: Record<LeadField, string[]> = {
   name: ['name', 'fullname', 'leadname', 'contactname', 'firstname'],
-  phone: ['phone', 'phonenumber', 'mobile', 'mobilenumber', 'cell', 'whatsapp', 'tel', 'telephone'],
+  phone: [
+    'phone',
+    'phonenumber',
+    'mobile',
+    'mobilenumber',
+    'cell',
+    'whatsapp',
+    'whatsappnumber',
+    'whatsapptelegramcontact',
+    'whatsapptelegram',
+    'contact',
+    'tel',
+    'telephone',
+  ],
   email: ['email', 'emailaddress', 'mail', 'emailid'],
   company: ['company', 'organization', 'organisation', 'org', 'business', 'companyname'],
-  city: ['city', 'town', 'location'],
+  city: ['city', 'town'],
+  address: ['address', 'fulladdress', 'location', 'place'],
+  age: ['age', 'years', 'yearsold'],
+  activeSince: ['activesince', 'active', 'since', 'memberfor', 'duration'],
+  languages: ['language', 'languages', 'lang', 'speaks'],
+  extraDetails: [
+    'extradetails',
+    'extra',
+    'details',
+    'about',
+    'description',
+    'remarks',
+  ],
+  phoneType: ['phonetype', 'devicetype', 'device', 'os'],
+  notOnWhatsapp: [
+    'notonwhatsapp',
+    'nowhatsapp',
+    'whatsappstatus',
+    'whatsappavailable',
+  ],
   source: ['source', 'leadsource', 'channel'],
   tags: ['tags', 'labels', 'tag'],
 };
@@ -212,6 +268,36 @@ function buildRow(
         .map((t) => t.trim())
         .filter(Boolean);
       if (parts.length > 0) out.tags = parts;
+    } else if (field === 'languages') {
+      // v0.1.4 — languages are comma-separated in the user's
+      // spreadsheet (e.g. "Hindi, English"). We also tolerate a
+      // semicolon for parity with `tags`.
+      const parts = trimmed
+        .split(/[;,]/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+      if (parts.length > 0) out.languages = parts;
+    } else if (field === 'age') {
+      const n = Number(trimmed);
+      if (Number.isInteger(n) && n > 0 && n < 200) {
+        out.age = n;
+      }
+    } else if (field === 'notOnWhatsapp') {
+      const norm = trimmed.toLowerCase();
+      if (['true', '1', 'yes', 'y'].includes(norm)) {
+        out.notOnWhatsapp = true;
+      } else if (['false', '0', 'no', 'n'].includes(norm)) {
+        out.notOnWhatsapp = false;
+      }
+    } else if (field === 'phoneType') {
+      // Light normalisation — canonicalise iphone/Android/other
+      // capitalisation; pass other values through so the schema can
+      // accept tenant-specific labels.
+      const lc = trimmed.toLowerCase();
+      if (lc === 'iphone') out.phoneType = 'iPhone';
+      else if (lc === 'android') out.phoneType = 'Android';
+      else if (lc === 'other') out.phoneType = 'Other';
+      else out.phoneType = trimmed;
     } else {
       out[field] = trimmed;
     }
@@ -709,13 +795,15 @@ export function CsvImport() {
                           mappedFields.has(f.key),
                         ).map((f) => {
                           const v = built[f.key];
-                          if (f.key === 'tags') {
-                            const tags = Array.isArray(v) ? (v as string[]) : [];
+                          if (f.key === 'tags' || f.key === 'languages') {
+                            const items = Array.isArray(v)
+                              ? (v as string[])
+                              : [];
                             return (
                               <TableCell key={f.key}>
-                                {tags.length > 0 ? (
+                                {items.length > 0 ? (
                                   <div className="flex flex-wrap gap-1">
-                                    {tags.map((t) => (
+                                    {items.map((t) => (
                                       <Badge
                                         key={t}
                                         variant="secondary"
@@ -725,6 +813,40 @@ export function CsvImport() {
                                       </Badge>
                                     ))}
                                   </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">
+                                    —
+                                  </span>
+                                )}
+                              </TableCell>
+                            );
+                          }
+                          if (f.key === 'age') {
+                            return (
+                              <TableCell
+                                key={f.key}
+                                className="text-right tabular-nums"
+                              >
+                                {typeof v === 'number' ? (
+                                  v
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">
+                                    —
+                                  </span>
+                                )}
+                              </TableCell>
+                            );
+                          }
+                          if (f.key === 'notOnWhatsapp') {
+                            return (
+                              <TableCell key={f.key}>
+                                {typeof v === 'boolean' ? (
+                                  <Badge
+                                    variant={v ? 'destructive' : 'secondary'}
+                                    className="font-normal"
+                                  >
+                                    {v ? 'Not on WhatsApp' : 'On WhatsApp'}
+                                  </Badge>
                                 ) : (
                                   <span className="text-xs text-muted-foreground">
                                     —

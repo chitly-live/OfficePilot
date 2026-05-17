@@ -131,6 +131,18 @@ model Lead {
   notes    String?    @db.Text
   tags     String[]   @default([])
 
+  // v0.1.4 — fields matching Chitly team's existing lead spreadsheet
+  // format (see Excel screenshot). All optional so older imports without
+  // these columns continue to work. `address` is free-form multi-line
+  // (replaces narrow `city` for new leads but city kept for back-compat).
+  age           Int?
+  activeSince   String?  // e.g. "5 Days", "6 months" — free text
+  languages     String[] @default([]) // e.g. ["Hindi", "Marathi", "English"]
+  extraDetails  String?  @db.Text // short context line, separate from `notes`
+  phoneType     String? // "iPhone" | "Android" | "Other" | null
+  notOnWhatsapp Boolean  @default(false)
+  address       String?  @db.Text // full address — city + state + country if needed
+
   ownerId     String?
   owner       User?   @relation("LeadOwner", fields: [ownerId], references: [id])
   createdById String

@@ -194,6 +194,40 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
     ];
   }
 
+  // ---- v0.1.4 filter params (not yet in leadListQuerySchema) ----
+  // These are read straight off the raw URL params because the parallel
+  // schema agent owns `leadListQuerySchema` — adding them here keeps
+  // the UI feature self-contained until both branches merge.
+  const phoneTypeFilter = (() => {
+    const v = rawParams.phoneType?.trim();
+    if (!v) return undefined;
+    if (v === 'Unknown') return 'unknown' as const;
+    if (v === 'iPhone' || v === 'Android' || v === 'Other') return v;
+    return undefined;
+  })();
+  if (phoneTypeFilter === 'unknown') {
+    where.phoneType = null;
+  } else if (phoneTypeFilter !== undefined) {
+    where.phoneType = phoneTypeFilter;
+  }
+
+  const languagesFilter = (() => {
+    const v = rawParams.languages?.trim();
+    if (!v) return [] as string[];
+    return v
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  })();
+  if (languagesFilter.length > 0) {
+    where.languages = { hasSome: languagesFilter };
+  }
+
+  const notOnWhatsappFilter = rawParams.notOnWhatsapp === '1';
+  if (notOnWhatsappFilter) {
+    where.notOnWhatsapp = true;
+  }
+
   // Sort column mapping mirrors the API. Default is `createdAt desc`.
   const SORT_COLUMN_BY_KEY = {
     created: 'createdAt',
@@ -221,7 +255,7 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
   //    list is bounded (active users only, capped at 200) — way
   //    smaller than the lead set and a tiny extra round-trip.
   // ------------------------------------------------------------------
-  const [items, total, ownerRows] = await Promise.all([
+  const [items, total, ownerRows, languageRows] = await Promise.all([
     prisma.lead.findMany({
       where,
       select: leadPublicProjection,
@@ -236,12 +270,34 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
       orderBy: [{ name: 'asc' }, { email: 'asc' }],
       take: 200,
     }),
+    // v0.1.4 — feed the Language multi-select filter with the distinct
+    // values present across the tenant. Cap at 200 rows scanned for the
+    // distinct projection; the chip picker doesn't need more.
+    prisma.lead.findMany({
+      where: { languages: { isEmpty: false } },
+      select: { languages: true },
+      take: 200,
+    }),
   ]);
 
   const ownerOptions: OwnerOption[] = ownerRows.map((u) => ({
     id: u.id,
     label: u.name?.trim() || u.email,
   }));
+
+  // v0.1.4 — flatten the per-lead arrays and dedupe (case-sensitive,
+  // preserving the canonical casing seen in DB) so the filter picker
+  // shows each language exactly once.
+  const languageOptions: string[] = (() => {
+    const seen = new Set<string>();
+    for (const row of languageRows) {
+      for (const lang of row.languages) {
+        const t = lang.trim();
+        if (t !== '' && !seen.has(t)) seen.add(t);
+      }
+    }
+    return Array.from(seen).sort((a, b) => a.localeCompare(b));
+  })();
 
   // ------------------------------------------------------------------
   // 5. Build the href helper for Pagination + the view toggle. We
@@ -269,6 +325,16 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
       params.set('dateTo', query.dateTo.toISOString().slice(0, 10));
     }
     if (query.page !== 1) params.set('page', String(query.page));
+    // v0.1.4 — preserve the new spreadsheet-aligned filters too.
+    if (phoneTypeFilter === 'unknown') {
+      params.set('phoneType', 'Unknown');
+    } else if (phoneTypeFilter !== undefined) {
+      params.set('phoneType', phoneTypeFilter);
+    }
+    if (languagesFilter.length > 0) {
+      params.set('languages', languagesFilter.join(','));
+    }
+    if (notOnWhatsappFilter) params.set('notOnWhatsapp', '1');
     // Preserve the active view by default — overrides may flip it.
     if (view !== 'table') params.set('view', view);
 
@@ -373,6 +439,16 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
         defaultDateFrom={defaultDateFrom}
         defaultDateTo={defaultDateTo}
         ownerOptions={ownerOptions}
+        defaultPhoneType={
+          phoneTypeFilter === undefined
+            ? ''
+            : phoneTypeFilter === 'unknown'
+              ? 'Unknown'
+              : phoneTypeFilter
+        }
+        defaultLanguages={languagesFilter}
+        languageOptions={languageOptions}
+        defaultNotOnWhatsapp={notOnWhatsappFilter}
       />
 
       {isKanban ? (
@@ -417,6 +493,15 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
                 query.dateTo !== undefined
                   ? query.dateTo.toISOString().slice(0, 10)
                   : undefined,
+              phoneType:
+                phoneTypeFilter === 'unknown'
+                  ? 'Unknown'
+                  : phoneTypeFilter,
+              languages:
+                languagesFilter.length > 0
+                  ? languagesFilter.join(',')
+                  : undefined,
+              notOnWhatsapp: notOnWhatsappFilter ? '1' : undefined,
               view: view !== 'table' ? view : undefined,
             }}
           />

@@ -35,6 +35,7 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Form,
   FormControl,
@@ -55,6 +56,15 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 
 import { TagsInput } from '../tags-input';
+
+// ---------------------------------------------------------------------------
+// v0.1.4 — phone-type options
+// ---------------------------------------------------------------------------
+
+/** Sentinel for the "no phone type chosen" Select item — Radix
+ *  rejects empty-string values. Translated to `undefined` on submit. */
+const PHONE_TYPE_NONE = '__none__';
+const PHONE_TYPE_OPTIONS = ['iPhone', 'Android', 'Other'] as const;
 
 // ---------------------------------------------------------------------------
 // Schema (client-side mirror of `leadCreateSchema`)
@@ -131,6 +141,49 @@ const formSchema = z
         'Value must be a non-negative number',
       ),
     tags: z.array(z.string()).max(30, 'A lead may have at most 30 tags'),
+    // v0.1.4 — spreadsheet fields
+    age: z
+      .string()
+      .trim()
+      .optional()
+      .or(z.literal(''))
+      .refine(
+        (val) => {
+          if (!val) return true;
+          const n = Number(val);
+          return Number.isInteger(n) && n > 0 && n < 200;
+        },
+        'Age must be a whole number between 1 and 199',
+      ),
+    activeSince: z
+      .string()
+      .trim()
+      .max(100, 'Active since must be 100 characters or fewer')
+      .optional()
+      .or(z.literal('')),
+    languages: z
+      .array(z.string())
+      .max(20, 'A lead may have at most 20 languages'),
+    extraDetails: z
+      .string()
+      .trim()
+      .max(500, 'Extra details must be 500 characters or fewer')
+      .optional()
+      .or(z.literal('')),
+    phoneType: z
+      .union([
+        z.literal(''),
+        z.literal(PHONE_TYPE_NONE),
+        z.enum(PHONE_TYPE_OPTIONS),
+      ])
+      .optional(),
+    notOnWhatsapp: z.boolean(),
+    address: z
+      .string()
+      .trim()
+      .max(1000, 'Address must be 1000 characters or fewer')
+      .optional()
+      .or(z.literal('')),
     ownerId: z.string().min(1, 'Owner is required'),
     followUpDate: z
       .string()
@@ -259,6 +312,14 @@ export function LeadCreateForm({
       followUpDate: '',
       followUpTime: '',
       notes: '',
+      // v0.1.4 — Profile (optional) section defaults.
+      age: '',
+      activeSince: '',
+      languages: [],
+      extraDetails: '',
+      phoneType: PHONE_TYPE_NONE,
+      notOnWhatsapp: false,
+      address: '',
     },
   });
 
@@ -300,6 +361,32 @@ export function LeadCreateForm({
         (values.followUpTime ?? '').trim(),
       );
     }
+
+    // v0.1.4 — Profile (optional) fields. Empty strings are stripped
+    // so the API receives `undefined` for "absent" rather than `""`.
+    const ageRaw = (values.age ?? '').trim();
+    if (ageRaw !== '') payload.age = Number(ageRaw);
+
+    const activeSince = (values.activeSince ?? '').trim();
+    if (activeSince !== '') payload.activeSince = activeSince;
+
+    if (values.languages.length > 0) payload.languages = values.languages;
+
+    const extraDetails = (values.extraDetails ?? '').trim();
+    if (extraDetails !== '') payload.extraDetails = extraDetails;
+
+    const phoneTypeRaw = values.phoneType ?? '';
+    if (phoneTypeRaw !== '' && phoneTypeRaw !== PHONE_TYPE_NONE) {
+      payload.phoneType = phoneTypeRaw;
+    }
+
+    // Always send the boolean — its default is `false` and the API
+    // schema treats `undefined` the same way, but being explicit
+    // means a future schema change can rely on the field's presence.
+    if (values.notOnWhatsapp === true) payload.notOnWhatsapp = true;
+
+    const address = (values.address ?? '').trim();
+    if (address !== '') payload.address = address;
 
     let res: Response;
     try {
@@ -430,53 +517,60 @@ export function LeadCreateForm({
           />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <FormField
-            control={form.control}
-            name="city"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>
-                  City <span className="text-muted-foreground">(optional)</span>
-                </FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="Mumbai"
-                    autoComplete="off"
-                    disabled={isSubmitting}
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+        <FormField
+          control={form.control}
+          name="address"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                Address{' '}
+                <span className="text-muted-foreground">(optional)</span>
+              </FormLabel>
+              <FormControl>
+                <Textarea
+                  rows={2}
+                  placeholder={'Pune, Maharashtra'}
+                  autoComplete="off"
+                  disabled={isSubmitting}
+                  {...field}
+                />
+              </FormControl>
+              <FormDescription>
+                Free-form — city, state, country, anything that helps the
+                team place this lead.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-          <FormField
-            control={form.control}
-            name="value"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>
-                  Estimated value (₹){' '}
-                  <span className="text-muted-foreground">(optional)</span>
-                </FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    step="any"
-                    placeholder="50000"
-                    disabled={isSubmitting}
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
+        <FormField
+          control={form.control}
+          name="value"
+          render={({ field }) => (
+            <FormItem className="sm:max-w-sm">
+              <FormLabel>
+                Estimated value (₹){' '}
+                <span className="text-muted-foreground">(optional)</span>
+              </FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="any"
+                  placeholder="50000"
+                  disabled={isSubmitting}
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {/* Legacy `city` is intentionally hidden in the create form —
+            the new `address` field replaces it for fresh entries. */}
 
         <div className="grid gap-4 sm:grid-cols-3">
           <FormField
@@ -566,6 +660,164 @@ export function LeadCreateForm({
             )}
           />
         </div>
+
+        {/* ----------------------------------------------------------
+             v0.1.4 — Profile (optional) section.
+             Mirrors the Chitly team's Excel columns so admins can
+             capture all the spreadsheet context without switching
+             tools.
+             ---------------------------------------------------------- */}
+        <fieldset className="space-y-4 rounded-md border bg-muted/30 p-4">
+          <legend className="px-1 text-sm font-medium text-foreground">
+            Profile{' '}
+            <span className="text-muted-foreground">(optional)</span>
+          </legend>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <FormField
+              control={form.control}
+              name="age"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Age</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={199}
+                      step={1}
+                      placeholder="29"
+                      disabled={isSubmitting}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="activeSince"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Active Since</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="10 Days, 6 months, etc."
+                      autoComplete="off"
+                      disabled={isSubmitting}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="phoneType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Phone Type</FormLabel>
+                  <Select
+                    value={
+                      field.value === '' || field.value === undefined
+                        ? PHONE_TYPE_NONE
+                        : field.value
+                    }
+                    onValueChange={field.onChange}
+                    disabled={isSubmitting}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="(none)" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value={PHONE_TYPE_NONE}>(none)</SelectItem>
+                      {PHONE_TYPE_OPTIONS.map((v) => (
+                        <SelectItem key={v} value={v}>
+                          {v}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <FormField
+            control={form.control}
+            name="languages"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Languages</FormLabel>
+                <FormControl>
+                  <TagsInput
+                    value={field.value}
+                    onChange={field.onChange}
+                    disabled={isSubmitting}
+                    placeholder="Press Enter to add (e.g. Hindi, English)"
+                    maxTags={20}
+                  />
+                </FormControl>
+                <FormDescription>
+                  Free text — no whitelist. The filter bar will pick up new
+                  values automatically.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="extraDetails"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Extra Details</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="IT Job - Unmarried - Finding Someone"
+                    autoComplete="off"
+                    disabled={isSubmitting}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="notOnWhatsapp"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-center gap-2 space-y-0">
+                <FormControl>
+                  <Checkbox
+                    id="lead-create-not-whatsapp"
+                    checked={field.value}
+                    onCheckedChange={(v) => field.onChange(v === true)}
+                    disabled={isSubmitting}
+                  />
+                </FormControl>
+                <FormLabel
+                  htmlFor="lead-create-not-whatsapp"
+                  className="cursor-pointer text-sm font-normal"
+                >
+                  Not on WhatsApp
+                </FormLabel>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </fieldset>
 
         <FormField
           control={form.control}

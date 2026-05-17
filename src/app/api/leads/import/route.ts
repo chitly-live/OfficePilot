@@ -95,6 +95,230 @@ import {
   type LeadCsvRowInput,
 } from '@/lib/schemas/leads';
 
+// ---------------------------------------------------------------------------
+// Server-side header recognition (v0.1.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical lead fields the row schema understands. Keep in sync with
+ * `leadCsvRowSchema`'s top-level keys in `src/lib/schemas/leads.ts`.
+ *
+ * Used by `canonicalizeRow` to translate spreadsheet column headers
+ * (which arrive verbatim from the upload UI's auto-detect *or* from a
+ * direct API caller that hasn't pre-mapped its CSV) onto the schema's
+ * canonical key names. Pre-mapped payloads — where every key is already
+ * a canonical field name — pass through unchanged because each
+ * canonical name is also listed as a synonym for itself.
+ */
+const CANONICAL_FIELDS = [
+  'name',
+  'phone',
+  'email',
+  'company',
+  'city',
+  'source',
+  'tags',
+  'notes',
+  'value',
+  'priority',
+  'age',
+  'activeSince',
+  'languages',
+  'extraDetails',
+  'phoneType',
+  'notOnWhatsapp',
+  'address',
+  'createdAt',
+] as const;
+type CanonicalField = (typeof CANONICAL_FIELDS)[number];
+
+/**
+ * Normalize a header string for case/whitespace/punctuation-insensitive
+ * lookup. Lowercases, strips trailing colons (some spreadsheets render
+ * headers as "Phone Type:"), strips everything that isn't a letter or
+ * digit. This must match the keys used in `HEADER_ALIASES` below.
+ */
+function normalizeHeader(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[:#]+$/, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Lookup table mapping normalized header variants to the canonical
+ * field name. Each canonical field lists every spreadsheet phrasing
+ * we've seen in the Chitly team's existing imports (see SPEC v0.1.4 +
+ * the Excel screenshot the user shared).
+ *
+ * Built as a const lookup at module load so per-row canonicalization
+ * is O(headers) per row, not O(headers × variants).
+ */
+const HEADER_ALIASES: Record<string, CanonicalField> = (() => {
+  const variants: Record<CanonicalField, string[]> = {
+    name: ['name', 'fullname', 'leadname', 'contactname', 'firstname'],
+    phone: [
+      'phone',
+      'phonenumber',
+      'mobile',
+      'mobilenumber',
+      'cell',
+      'whatsapp',
+      'whatsappnumber',
+      'whatsapptelegramcontact',
+      'whatsapptelegram',
+      'whatsappcontact',
+      'telegramcontact',
+      'contact',
+      'tel',
+      'telephone',
+    ],
+    email: ['email', 'emailaddress', 'mail', 'emailid'],
+    company: [
+      'company',
+      'organization',
+      'organisation',
+      'org',
+      'business',
+      'companyname',
+    ],
+    city: ['city', 'town'],
+    source: ['source', 'leadsource', 'channel'],
+    tags: ['tags', 'labels', 'tag'],
+    notes: ['notes', 'note', 'longnotes', 'comments'],
+    value: ['value', 'inrvalue', 'estimatedvalue', 'dealvalue', 'amount'],
+    priority: ['priority'],
+    // v0.1.4 spreadsheet columns
+    age: ['age'],
+    activeSince: ['activesince', 'since', 'active'],
+    languages: ['language', 'languages', 'lang', 'langs'],
+    extraDetails: [
+      'extradetails',
+      'details',
+      'notesbrief',
+      'briefnotes',
+      'context',
+    ],
+    phoneType: ['phonetype', 'device', 'devicetype', 'phoneos'],
+    notOnWhatsapp: [
+      'notonwhatsapp',
+      'nowhatsapp',
+      'whatsappabsent',
+      'nowa',
+    ],
+    address: ['address', 'addr', 'location', 'fulladdress', 'streetaddress'],
+    createdAt: ['date', 'created', 'createdat', 'createdon', 'createddate'],
+  };
+
+  const out: Record<string, CanonicalField> = {};
+  for (const field of CANONICAL_FIELDS) {
+    for (const variant of variants[field]) {
+      out[variant] = field;
+    }
+  }
+  return out;
+})();
+
+/**
+ * Accept multiple date formats commonly produced by spreadsheets:
+ *
+ *   • Native `Date` instance (passed straight through).
+ *   • ISO 8601 — `2026-01-31`, `2026-01-31T03:00:00Z`. Native `Date`.
+ *   • US slash — `1/31/2026`, `01/31/2026`. Disambiguated by year
+ *     position (4-digit year wins).
+ *   • Excel month abbreviation — `31-Jan-2026`. Manually parsed.
+ *
+ * Returns `undefined` (NOT throws) when parsing fails so the route
+ * can fall back to `now()` rather than rejecting the whole row —
+ * preserving operator intent on partial data ("import even if I
+ * mis-formatted the date column").
+ */
+const MONTH_ABBREV: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+function parseSpreadsheetDate(raw: unknown): Date | undefined {
+  if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? undefined : raw;
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return undefined;
+
+  // 31-Jan-2026 / 31 Jan 2026 / Jan-31-2026
+  const abbrev = trimmed.match(
+    /^(?:(\d{1,2})[\s-]+([A-Za-z]{3,})[\s-]+(\d{4}))$/,
+  );
+  if (abbrev) {
+    const day = Number(abbrev[1]);
+    const monthKey = abbrev[2]!.slice(0, 3).toLowerCase();
+    const year = Number(abbrev[3]);
+    const month = MONTH_ABBREV[monthKey];
+    if (month !== undefined && Number.isFinite(day) && Number.isFinite(year)) {
+      const d = new Date(Date.UTC(year, month, day));
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+  }
+
+  // M/D/YYYY (US) — disambiguate by 4-digit year position.
+  const slash = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slash) {
+    const month = Number(slash[1]);
+    const day = Number(slash[2]);
+    const year = Number(slash[3]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const d = new Date(Date.UTC(year, month - 1, day));
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+  }
+
+  // ISO / anything else `new Date` understands.
+  const fallback = new Date(trimmed);
+  if (!Number.isNaN(fallback.getTime())) return fallback;
+  return undefined;
+}
+
+/**
+ * Translate a raw inbound row (keys may be CSV header names OR
+ * canonical field names) into a canonical-keyed object ready for
+ * `leadCsvRowSchema`. Unknown headers are silently dropped.
+ *
+ * If multiple input keys map to the same canonical field (e.g. both
+ * `"Phone"` and `"WhatsApp"` columns exist in the source CSV), the
+ * first non-empty value wins — operators typically duplicate the
+ * column for visibility, not to provide different values.
+ *
+ * The `createdAt` column is parsed into a `Date` here rather than at
+ * the Zod layer because the date formats accepted (`31-Jan-2026`,
+ * `1/31/2026`) require multi-format parsing logic that doesn't belong
+ * in a schema field. Unparseable dates degrade to `undefined`, which
+ * the route then translates to "use now()".
+ */
+function canonicalizeRow(raw: unknown): Record<string, unknown> {
+  if (raw === null || typeof raw !== 'object') return {};
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const normalized = normalizeHeader(key);
+    const canonical = HEADER_ALIASES[normalized];
+    if (!canonical) continue;
+    // First-non-empty-value-wins: an existing non-empty value isn't
+    // overwritten by a later alias hit.
+    const existing = out[canonical];
+    const existingHasValue =
+      existing !== undefined &&
+      existing !== null &&
+      !(typeof existing === 'string' && existing.trim().length === 0);
+    if (existingHasValue) continue;
+
+    if (canonical === 'createdAt') {
+      const parsed = parseSpreadsheetDate(value);
+      if (parsed !== undefined) out[canonical] = parsed;
+      continue;
+    }
+    out[canonical] = value;
+  }
+  return out;
+}
+
 // Force the Node runtime — Prisma is not Edge-compatible.
 export const runtime = 'nodejs';
 
@@ -204,10 +428,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // -- 1. Per-row schema validation ----------------------------------------
     //
     // Validate each row independently so a single bad row produces a
-    // targeted `errors[]` entry rather than aborting the batch.
+    // targeted `errors[]` entry rather than aborting the batch. Each
+    // row is canonicalized first (header aliases → canonical field
+    // names) so callers can post either a pre-mapped object (the
+    // upload UI's path) or a raw-CSV object keyed by spreadsheet
+    // headers (external integrations / direct API callers).
     const validRows: ValidRow[] = [];
     for (let i = 0; i < rows.length; i += 1) {
-      const parsed = leadCsvRowSchema.safeParse(rows[i]);
+      const canonical = canonicalizeRow(rows[i]);
+      const parsed = leadCsvRowSchema.safeParse(canonical);
       if (!parsed.success) {
         // Use the first issue's message as the human summary; the
         // full issue list ships in `issues` for clients that want to
@@ -361,6 +590,34 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           ...(row.data.city !== undefined ? { city: row.data.city } : {}),
           source: row.data.source,
           tags: row.data.tags,
+          ...(row.data.notes !== undefined ? { notes: row.data.notes } : {}),
+          ...(row.data.value !== undefined ? { value: row.data.value } : {}),
+          ...(row.data.priority !== undefined ? { priority: row.data.priority } : {}),
+          // v0.1.4 — Chitly-spreadsheet columns. The schema's defaults
+          // (`languages: []`, `notOnWhatsapp: false`) are applied
+          // unconditionally so the column shape stays predictable
+          // even when a row's CSV omitted the field entirely.
+          ...(row.data.age !== undefined ? { age: row.data.age } : {}),
+          ...(row.data.activeSince !== undefined
+            ? { activeSince: row.data.activeSince }
+            : {}),
+          languages: row.data.languages,
+          ...(row.data.extraDetails !== undefined
+            ? { extraDetails: row.data.extraDetails }
+            : {}),
+          ...(row.data.phoneType !== undefined
+            ? { phoneType: row.data.phoneType }
+            : {}),
+          notOnWhatsapp: row.data.notOnWhatsapp,
+          ...(row.data.address !== undefined ? { address: row.data.address } : {}),
+          // Honour an operator-provided `Date` column so the imported
+          // pipeline reflects the original lead capture order — useful
+          // when an existing-spreadsheet operator is back-filling.
+          // `createMany` accepts `createdAt` directly (Prisma's default
+          // is `now()` which is only applied when the field is absent).
+          ...(row.data.createdAt !== undefined
+            ? { createdAt: row.data.createdAt }
+            : {}),
           ownerId: session.userId,
           createdById: session.userId,
         })),

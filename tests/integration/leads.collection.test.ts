@@ -483,6 +483,147 @@ describe('POST /api/leads — RBAC on cross-assignment', () => {
   });
 });
 
+describe('POST /api/leads — v0.1.4 Chitly spreadsheet fields', () => {
+  it('persists all 7 new fields (age, activeSince, languages, extraDetails, phoneType, notOnWhatsapp, address)', async () => {
+    const { user: admin } = await createTestUser({ role: 'ADMIN' });
+    await setSession({ userId: admin.id, role: 'ADMIN' });
+
+    const res = await POST(
+      buildJsonRequest('POST', 'http://test/api/leads', {
+        name: 'Chitly Lead',
+        phone: '9876543210',
+        age: 29,
+        activeSince: '10 Days',
+        languages: ['Hindi', 'Marathi', 'English'],
+        extraDetails: 'IT Job — Unmarried',
+        phoneType: 'iPhone',
+        notOnWhatsapp: false,
+        address: 'Pune, Maharashtra',
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await getJson<{
+      id: string;
+      age: number | null;
+      activeSince: string | null;
+      languages: string[];
+      extraDetails: string | null;
+      phoneType: string | null;
+      notOnWhatsapp: boolean;
+      address: string | null;
+    }>(res);
+
+    // Response surfaces every new column.
+    expect(body!.age).toBe(29);
+    expect(body!.activeSince).toBe('10 Days');
+    expect(body!.languages).toEqual(['Hindi', 'Marathi', 'English']);
+    expect(body!.extraDetails).toBe('IT Job — Unmarried');
+    expect(body!.phoneType).toBe('iPhone');
+    expect(body!.notOnWhatsapp).toBe(false);
+    expect(body!.address).toBe('Pune, Maharashtra');
+
+    // DB round-trip.
+    const stored = await prisma.lead.findUnique({ where: { id: body!.id } });
+    expect(stored).not.toBeNull();
+    expect(stored!.age).toBe(29);
+    expect(stored!.activeSince).toBe('10 Days');
+    expect(stored!.languages).toEqual(['Hindi', 'Marathi', 'English']);
+    expect(stored!.extraDetails).toBe('IT Job — Unmarried');
+    expect(stored!.phoneType).toBe('iPhone');
+    expect(stored!.notOnWhatsapp).toBe(false);
+    expect(stored!.address).toBe('Pune, Maharashtra');
+  });
+
+  it('applies sensible defaults when new fields are omitted (languages=[], notOnWhatsapp=false, others null)', async () => {
+    const { user: admin } = await createTestUser({ role: 'ADMIN' });
+    await setSession({ userId: admin.id, role: 'ADMIN' });
+
+    const res = await POST(
+      buildJsonRequest('POST', 'http://test/api/leads', {
+        name: 'Minimal Lead',
+        email: 'minimal@example.com',
+      }),
+    );
+    expect(res.status).toBe(201);
+    const body = await getJson<{
+      id: string;
+      age: number | null;
+      activeSince: string | null;
+      languages: string[];
+      extraDetails: string | null;
+      phoneType: string | null;
+      notOnWhatsapp: boolean;
+      address: string | null;
+    }>(res);
+
+    expect(body!.age).toBeNull();
+    expect(body!.activeSince).toBeNull();
+    expect(body!.languages).toEqual([]);
+    expect(body!.extraDetails).toBeNull();
+    expect(body!.phoneType).toBeNull();
+    expect(body!.notOnWhatsapp).toBe(false);
+    expect(body!.address).toBeNull();
+  });
+
+  it('accepts the marker `notOnWhatsapp: true` to flag leads missing WhatsApp', async () => {
+    const { user: admin } = await createTestUser({ role: 'ADMIN' });
+    await setSession({ userId: admin.id, role: 'ADMIN' });
+
+    const res = await POST(
+      buildJsonRequest('POST', 'http://test/api/leads', {
+        name: 'No WhatsApp Lead',
+        phone: '+91 99 1234 5678',
+        notOnWhatsapp: true,
+      }),
+    );
+    expect(res.status).toBe(201);
+    const body = await getJson<{ id: string; notOnWhatsapp: boolean }>(res);
+    expect(body!.notOnWhatsapp).toBe(true);
+
+    const stored = await prisma.lead.findUnique({ where: { id: body!.id } });
+    expect(stored!.notOnWhatsapp).toBe(true);
+  });
+
+  it('returns 400 for an invalid phoneType ("BlackBerry")', async () => {
+    const { user: admin } = await createTestUser({ role: 'ADMIN' });
+    await setSession({ userId: admin.id, role: 'ADMIN' });
+
+    const res = await POST(
+      buildJsonRequest('POST', 'http://test/api/leads', {
+        name: 'Bad Phone Type',
+        email: 'badphone@example.com',
+        phoneType: 'BlackBerry',
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = await getJson<{ error: string; issues: unknown[] }>(res);
+    expect(body!.error).toBe('bad_request');
+    expect(Array.isArray(body!.issues)).toBe(true);
+    expect(await prisma.lead.count()).toBe(0);
+  });
+
+  it('returns 400 when `languages` exceeds the 16-item cap', async () => {
+    const { user: admin } = await createTestUser({ role: 'ADMIN' });
+    await setSession({ userId: admin.id, role: 'ADMIN' });
+
+    // 17 distinct language strings — one over the cap.
+    const tooMany = Array.from({ length: 17 }, (_, i) => `Lang${i}`);
+
+    const res = await POST(
+      buildJsonRequest('POST', 'http://test/api/leads', {
+        name: 'Polyglot Lead',
+        email: 'polyglot@example.com',
+        languages: tooMany,
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = await getJson<{ error: string; issues: unknown[] }>(res);
+    expect(body!.error).toBe('bad_request');
+    expect(await prisma.lead.count()).toBe(0);
+  });
+});
+
 describe('POST /api/leads — validation', () => {
   it('returns 400 when the body is missing the required name field', async () => {
     const { user: admin } = await createTestUser({ role: 'ADMIN' });

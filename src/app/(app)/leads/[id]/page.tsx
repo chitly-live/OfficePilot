@@ -41,6 +41,8 @@ import {
   type LeadPublic,
 } from '@/lib/schemas/leads';
 
+import { Badge } from '@/components/ui/badge';
+import { Ban } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -195,7 +197,23 @@ export default async function LeadDetailPage({ params }: PageProps) {
 
   if (!lead) notFound();
 
-  const leadPublic = lead as LeadPublic;
+  /**
+   * v0.1.4 — local view of the lead row that tolerates the 7 new
+   * spreadsheet fields. Once the parallel schema agent's update to
+   * `leadPublicProjection` ships, these properties will be present on
+   * `LeadPublic` directly and this alias collapses to the canonical
+   * type with no behaviour change.
+   */
+  type LeadDetailRow = LeadPublic & {
+    age?: number | null;
+    activeSince?: string | null;
+    languages?: string[];
+    extraDetails?: string | null;
+    phoneType?: string | null;
+    notOnWhatsapp?: boolean;
+    address?: string | null;
+  };
+  const leadPublic = lead as LeadDetailRow;
 
   // Authorisation hint for the inline edit form: the API enforces
   // "ADMIN or owner/creator can write", but we mirror it client-side
@@ -354,6 +372,14 @@ export default async function LeadDetailPage({ params }: PageProps) {
                       followUpDate,
                       followUpTime,
                       notes: leadPublic.notes,
+                      // v0.1.4 spreadsheet fields
+                      age: leadPublic.age ?? null,
+                      activeSince: leadPublic.activeSince ?? null,
+                      languages: leadPublic.languages ?? [],
+                      extraDetails: leadPublic.extraDetails ?? null,
+                      phoneType: leadPublic.phoneType ?? null,
+                      notOnWhatsapp: leadPublic.notOnWhatsapp ?? false,
+                      address: leadPublic.address ?? null,
                     }}
                   />
                 </CardContent>
@@ -472,6 +498,78 @@ export default async function LeadDetailPage({ params }: PageProps) {
               ) : null}
             </CardContent>
           </Card>
+
+          {/* v0.1.4 — Profile card surfacing the spreadsheet fields.
+              Every row renders even when null so the admin can see the
+              gap and fill it in via the Edit tab. */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Profile</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <ProfileRow label="Age" value={leadPublic.age ?? null} />
+              <ProfileRow
+                label="Active Since"
+                value={leadPublic.activeSince ?? null}
+              />
+              <ProfileRow
+                label="Language"
+                value={
+                  leadPublic.languages && leadPublic.languages.length > 0 ? (
+                    <div className="flex flex-wrap justify-end gap-1">
+                      {leadPublic.languages.map((l) => (
+                        <Badge
+                          key={l}
+                          variant="secondary"
+                          className="font-normal"
+                        >
+                          {l}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null
+                }
+              />
+              <ProfileRow
+                label="Phone Type"
+                value={
+                  leadPublic.phoneType ? (
+                    <Badge variant="secondary" className="font-normal">
+                      {leadPublic.phoneType}
+                    </Badge>
+                  ) : null
+                }
+              />
+              <ProfileRow
+                label="WhatsApp"
+                value={
+                  leadPublic.notOnWhatsapp === true ? (
+                    <span className="inline-flex items-center gap-1 text-destructive">
+                      <Ban className="h-3.5 w-3.5" aria-hidden="true" />
+                      Not on WhatsApp
+                    </span>
+                  ) : (
+                    leadPublic.phone ?? null
+                  )
+                }
+              />
+              <ProfileRow
+                label="Address"
+                value={
+                  (leadPublic.address ?? '').trim() !== ''
+                    ? leadPublic.address
+                    : (leadPublic.city ?? '').trim() !== ''
+                      ? leadPublic.city
+                      : null
+                }
+                preserveWhitespace
+              />
+              <ProfileRow
+                label="Extra Details"
+                value={leadPublic.extraDetails ?? null}
+              />
+            </CardContent>
+          </Card>
         </aside>
       </div>
     </div>
@@ -517,6 +615,51 @@ function SnapshotKV({
         {label}
       </span>
       <span className="text-right text-sm">{value}</span>
+    </div>
+  );
+}
+
+/**
+ * v0.1.4 — Profile-card row. Empty / null values render as a muted
+ * `—` instead of being hidden, so admins can see the gap and fill it
+ * in. Strings render right-aligned, ReactNode values pass through.
+ */
+function ProfileRow({
+  label,
+  value,
+  preserveWhitespace = false,
+}: {
+  label: string;
+  value: React.ReactNode | string | number | null | undefined;
+  /** Render the value with `whitespace-pre-wrap` (for multi-line
+   *  addresses). Ignored when `value` is not a plain string/number. */
+  preserveWhitespace?: boolean;
+}) {
+  const isEmpty =
+    value === null ||
+    value === undefined ||
+    (typeof value === 'string' && value.trim() === '');
+  const rendered = isEmpty ? (
+    <span className="text-muted-foreground">—</span>
+  ) : typeof value === 'string' || typeof value === 'number' ? (
+    <span
+      className={
+        preserveWhitespace
+          ? 'whitespace-pre-wrap text-foreground'
+          : 'text-foreground'
+      }
+    >
+      {value}
+    </span>
+  ) : (
+    value
+  );
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <span className="shrink-0 text-xs uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span className="min-w-0 text-right text-sm">{rendered}</span>
     </div>
   );
 }

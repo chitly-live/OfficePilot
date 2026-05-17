@@ -48,6 +48,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
@@ -61,6 +62,18 @@ const TEXT_DEBOUNCE_MS = 300;
  *  rejects empty string as an item value, so we use a sentinel and
  *  translate it to "no filter" before pushing to the URL. */
 const OWNER_ALL = '__all__';
+
+/** Sentinel value for the "all phone types" choice (same Select
+ *  empty-string limitation as the owner select). */
+const PHONE_TYPE_ALL = '__all__';
+
+/**
+ * Phone-type filter options. v0.1.4 — the spreadsheet only tracks
+ * iPhone / Android / Other, with `null` meaning "not yet captured".
+ * We surface that as a distinct "Unknown" choice so admins can
+ * triage rows missing the field.
+ */
+const PHONE_TYPE_VALUES = ['iPhone', 'Android', 'Other', 'Unknown'] as const;
 
 /** Friendly label for each LeadStatus. */
 const STATUS_LABELS: Record<LeadStatus, string> = {
@@ -117,6 +130,15 @@ export interface LeadsFiltersProps {
   /** YYYY-MM-DD or empty string. */
   defaultDateTo: string;
   ownerOptions: OwnerOption[];
+  /** v0.1.4 — currently selected phone-type filter; `''` = no filter. */
+  defaultPhoneType?: string;
+  /** v0.1.4 — currently selected languages (multi). */
+  defaultLanguages?: string[];
+  /** v0.1.4 — distinct language values across the tenant for the
+   *  multi-select picker. */
+  languageOptions?: string[];
+  /** v0.1.4 — when true, only show leads marked `notOnWhatsapp`. */
+  defaultNotOnWhatsapp?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,6 +155,10 @@ export function LeadsFilters({
   defaultDateFrom,
   defaultDateTo,
   ownerOptions,
+  defaultPhoneType = '',
+  defaultLanguages = [],
+  languageOptions = [],
+  defaultNotOnWhatsapp = false,
 }: LeadsFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -199,7 +225,27 @@ export function LeadsFilters({
     Boolean(defaultOwnerId) ||
     Boolean(defaultTag) ||
     Boolean(defaultDateFrom) ||
-    Boolean(defaultDateTo);
+    Boolean(defaultDateTo) ||
+    Boolean(defaultPhoneType) ||
+    defaultLanguages.length > 0 ||
+    defaultNotOnWhatsapp;
+
+  // Build the labels map for the language multi-select. Each option's
+  // own label is its display name (no remap needed) — we still build
+  // the Record so `MultiSelectFilter` can stay generic.
+  const languageLabels = React.useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    for (const v of languageOptions) map[v] = v;
+    // Make sure any active selection that isn't in `languageOptions`
+    // (e.g. a freshly-typed language not yet indexed) still renders.
+    for (const v of defaultLanguages) if (!map[v]) map[v] = v;
+    return map;
+  }, [languageOptions, defaultLanguages]);
+
+  const languageValues = React.useMemo(
+    () => Object.keys(languageLabels),
+    [languageLabels],
+  );
 
   return (
     <div className="space-y-3">
@@ -359,6 +405,72 @@ export function LeadsFilters({
               pushFilter({ dateTo: e.target.value || undefined })
             }
           />
+        </div>
+
+        {/* v0.1.4 — Phone Type filter (single-select). */}
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="leads-phone-type" className="text-xs">
+            Phone Type
+          </Label>
+          <Select
+            value={defaultPhoneType === '' ? PHONE_TYPE_ALL : defaultPhoneType}
+            onValueChange={(value) =>
+              pushFilter({
+                phoneType: value === PHONE_TYPE_ALL ? undefined : value,
+              })
+            }
+          >
+            <SelectTrigger
+              id="leads-phone-type"
+              className="w-full sm:w-40"
+              aria-label="Filter by phone type"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={PHONE_TYPE_ALL}>All phone types</SelectItem>
+              {PHONE_TYPE_VALUES.map((v) => (
+                <SelectItem key={v} value={v}>
+                  {v}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* v0.1.4 — Language filter (multi-select chips). */}
+        {languageValues.length > 0 || defaultLanguages.length > 0 ? (
+          <MultiSelectFilter<string>
+            label="Language"
+            ariaLabel="Filter by language"
+            values={languageValues}
+            labels={languageLabels}
+            selected={defaultLanguages}
+            onChange={(next) =>
+              pushFilter({
+                languages: next.length > 0 ? next.join(',') : undefined,
+              })
+            }
+          />
+        ) : null}
+
+        {/* v0.1.4 — "Not on WhatsApp" toggle. */}
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="leads-not-whatsapp" className="text-xs">
+            Not on WhatsApp
+          </Label>
+          <div className="flex h-10 items-center">
+            <Switch
+              id="leads-not-whatsapp"
+              checked={defaultNotOnWhatsapp}
+              onCheckedChange={(checked) =>
+                pushFilter({
+                  notOnWhatsapp: checked === true ? '1' : undefined,
+                })
+              }
+              aria-label="Show only leads not on WhatsApp"
+            />
+          </div>
         </div>
       </div>
     </div>

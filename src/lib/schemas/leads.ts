@@ -48,6 +48,65 @@ const MAX_UTM_FIELD_LENGTH = 200;
 const MAX_SEARCH_LENGTH = 200;
 const MAX_VALUE = 1_000_000_000; // ₹100 cr ceiling — beyond is almost certainly a typo.
 
+// v0.1.4 — Chitly-spreadsheet field caps. `address` and `extraDetails`
+// are both `@db.Text` server-side; the Zod caps below are paste-bomb
+// guards rather than hard storage limits.
+const MIN_AGE = 0;
+const MAX_AGE = 150;
+const MAX_ACTIVE_SINCE_LENGTH = 64;
+const MAX_LANGUAGE_LENGTH = 64;
+const MAX_LANGUAGES_PER_LEAD = 16;
+const MAX_EXTRA_DETAILS_LENGTH = 2000;
+const MAX_ADDRESS_LENGTH = 2000;
+
+/** Canonical `phoneType` values mirrored on the Prisma column. The
+ *  schema stores this as `String?` for forward-compat, but we restrict
+ *  inbound writes to this fixed set so the UI can render fixed icons. */
+export const PHONE_TYPE_VALUES = ['iPhone', 'Android', 'Other'] as const;
+export type PhoneType = (typeof PHONE_TYPE_VALUES)[number];
+
+/**
+ * Case-insensitive lookup table for the CSV import: maps common
+ * spreadsheet phrasings to a canonical `PhoneType`. Anything not in
+ * this table falls back to `'Other'`.
+ */
+const PHONE_TYPE_ALIASES: Record<string, PhoneType> = {
+  iphone: 'iPhone',
+  ios: 'iPhone',
+  apple: 'iPhone',
+  android: 'Android',
+  samsung: 'Android',
+  oneplus: 'Android',
+  google: 'Android',
+  pixel: 'Android',
+  other: 'Other',
+};
+
+/**
+ * Truthiness coercion for free-text spreadsheet cells in the
+ * "Not on WhatsApp" column. Accepts the obvious "yes/no/true/false/1/0"
+ * variants plus the literal column header value itself (some operators
+ * paste the header into the cell as a flag).
+ */
+const NOT_ON_WHATSAPP_TRUE = new Set([
+  'true',
+  'yes',
+  'y',
+  '1',
+  'not on whatsapp',
+  'no whatsapp',
+  'noWA'.toLowerCase(),
+]);
+const NOT_ON_WHATSAPP_FALSE = new Set([
+  '',
+  'false',
+  'no',
+  'n',
+  '0',
+  'on whatsapp',
+  'has whatsapp',
+]);
+
 const DEFAULT_PAGE = 1;
 /** SPEC.md §6.3: default 50/page. */
 const DEFAULT_PAGE_SIZE = 50;
@@ -160,6 +219,106 @@ const leadStatusField = z.nativeEnum(LeadStatus);
 const priorityField = z.nativeEnum(Priority);
 
 // ---------------------------------------------------------------------------
+// v0.1.4 — Chitly-spreadsheet field schemas
+// ---------------------------------------------------------------------------
+
+/**
+ * Age in years. Coerced from string ("29") because spreadsheet CSV
+ * cells are always strings. Whole numbers only; clamped to
+ * [MIN_AGE, MAX_AGE] so a stray `"129"` is fine but `"9999"` (likely a
+ * year typed into the wrong column) is rejected.
+ */
+const ageField = z.coerce
+  .number()
+  .int('Age must be a whole number')
+  .min(MIN_AGE, `Age must be at least ${MIN_AGE}`)
+  .max(MAX_AGE, `Age must be at most ${MAX_AGE}`);
+
+/**
+ * Free-text "active since" descriptor — e.g. `"5 Days"`, `"6 months"`,
+ * `"since Jan 2026"`. Intentionally NOT parsed into a duration: the
+ * column is operator-facing context, not data the backend reasons about.
+ */
+const activeSinceField = z
+  .string()
+  .trim()
+  .min(1, 'Active since cannot be empty')
+  .max(
+    MAX_ACTIVE_SINCE_LENGTH,
+    `Active since must be ${MAX_ACTIVE_SINCE_LENGTH} chars or fewer`,
+  );
+
+/** A single language label, e.g. `"Hindi"`. Stored verbatim — no
+ *  normalization, no ISO codes — because the spreadsheet uses
+ *  human-friendly names and we don't want to lossy-map them. */
+const languageField = z
+  .string()
+  .trim()
+  .min(1, 'Language cannot be empty')
+  .max(MAX_LANGUAGE_LENGTH, `Language must be ${MAX_LANGUAGE_LENGTH} chars or fewer`);
+
+const languagesField = z
+  .array(languageField)
+  .max(
+    MAX_LANGUAGES_PER_LEAD,
+    `A lead may list at most ${MAX_LANGUAGES_PER_LEAD} languages`,
+  );
+
+/** Short context line — distinct from `notes` (which is the long-form
+ *  scratchpad). Capped at 2 000 chars; the DB column is `@db.Text` so
+ *  the cap is a Zod-side paste-bomb guard. */
+const extraDetailsField = z
+  .string()
+  .trim()
+  .max(
+    MAX_EXTRA_DETAILS_LENGTH,
+    `Extra details must be ${MAX_EXTRA_DETAILS_LENGTH} chars or fewer`,
+  );
+
+/** Canonical phone-type enum. The Prisma column is `String?` for
+ *  forward-compat, but inbound writes are restricted to the fixed set
+ *  so the UI can render device icons without mapping fuzz. */
+const phoneTypeField = z.enum(PHONE_TYPE_VALUES);
+
+/** Full address — free-form multi-line. `@db.Text` server-side; capped
+ *  here so a multi-MB paste hits Zod, not Postgres. */
+const addressField = z
+  .string()
+  .trim()
+  .max(MAX_ADDRESS_LENGTH, `Address must be ${MAX_ADDRESS_LENGTH} chars or fewer`);
+
+/**
+ * Coerce a free-form `phoneType` string from a CSV cell to the canonical
+ * enum value. Case-insensitive lookup against `PHONE_TYPE_ALIASES`;
+ * unknown non-empty strings fall back to `'Other'`. Empty/whitespace
+ * input yields `undefined` so `.optional()` semantics work as expected
+ * downstream.
+ */
+function coercePhoneType(input: unknown): PhoneType | undefined {
+  if (typeof input !== 'string') return undefined;
+  const key = input.trim().toLowerCase();
+  if (key.length === 0) return undefined;
+  return PHONE_TYPE_ALIASES[key] ?? 'Other';
+}
+
+/**
+ * Coerce a free-form "Not on WhatsApp" cell to a boolean. Truthy
+ * variants → `true`; falsy/empty variants → `false`. Anything else
+ * also lands on `false` (safer default — the column means "missing
+ * WhatsApp", so the cautious read is "we don't know, assume they have
+ * it" rather than silently flagging the lead as unreachable).
+ */
+function coerceNotOnWhatsapp(input: unknown): boolean {
+  if (typeof input === 'boolean') return input;
+  if (typeof input === 'number') return input !== 0;
+  if (typeof input !== 'string') return false;
+  const key = input.trim().toLowerCase();
+  if (NOT_ON_WHATSAPP_TRUE.has(key)) return true;
+  if (NOT_ON_WHATSAPP_FALSE.has(key)) return false;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Source-string coercion (used by CSV + webhook)
 // ---------------------------------------------------------------------------
 
@@ -247,6 +406,17 @@ export const leadCreateSchema = z
     utmMedium: utmField.optional(),
     utmCampaign: utmField.optional(),
     nextFollowUpAt: isoDateTimeField.optional(),
+    // v0.1.4 — Chitly-spreadsheet fields. All optional; defaults
+    // (`languages: []`, `notOnWhatsapp: false`) mirror the Prisma
+    // column defaults so an omitted field round-trips identically
+    // whether persisted via this schema or the import schema.
+    age: ageField.optional().nullable(),
+    activeSince: activeSinceField.optional(),
+    languages: languagesField.optional().default([]),
+    extraDetails: extraDetailsField.optional(),
+    phoneType: phoneTypeField.optional().nullable(),
+    notOnWhatsapp: z.coerce.boolean().optional().default(false),
+    address: addressField.optional(),
   })
   .refine((value) => Boolean(value.phone) || Boolean(value.email), {
     message: 'Either phone or email is required',
@@ -294,6 +464,17 @@ export const leadUpdateSchema = z
     utmMedium: utmField.nullable().optional(),
     utmCampaign: utmField.nullable().optional(),
     nextFollowUpAt: isoDateTimeField.nullable().optional(),
+    // v0.1.4 — Chitly-spreadsheet fields. All nullable on PATCH so an
+    // operator can clear `age`/`extraDetails` etc. from the detail
+    // page; `languages` accepts an empty array as the "clear" signal
+    // rather than `null` because the Prisma column is `String[]`.
+    age: ageField.nullable().optional(),
+    activeSince: activeSinceField.nullable().optional(),
+    languages: languagesField.optional(),
+    extraDetails: extraDetailsField.nullable().optional(),
+    phoneType: phoneTypeField.nullable().optional(),
+    notOnWhatsapp: z.coerce.boolean().optional(),
+    address: addressField.nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'At least one field must be provided',
@@ -489,6 +670,76 @@ export const leadCsvRowSchema = z
         .optional()
         .default([]),
     ),
+    notes: z.preprocess(emptyToUndef, notesField.optional()),
+    // v0.1.4 — Chitly-spreadsheet columns. These are intentionally
+    // permissive — the CSV import is a "capture, don't reject" path:
+    // unparseable cells degrade to a safe default rather than failing
+    // the row, which would lose the rest of the data the operator
+    // typed in.
+    value: z.preprocess(
+      emptyToUndef,
+      z.coerce
+        .number()
+        .finite('Value must be a finite number')
+        .min(0, 'Value must be non-negative')
+        .max(MAX_VALUE, `Value must be ${MAX_VALUE} or less`)
+        .optional(),
+    ),
+    priority: z.preprocess(
+      emptyToUndef,
+      z
+        .string()
+        .transform((val) => val.trim().toUpperCase())
+        .pipe(priorityField)
+        .optional(),
+    ),
+    age: z.preprocess(
+      (val) => {
+        // Empty strings collapse to undefined so `.optional()` kicks
+        // in instead of `z.coerce.number()` parsing `""` → NaN.
+        if (typeof val === 'string' && val.trim().length === 0) {
+          return undefined;
+        }
+        return val;
+      },
+      ageField.optional(),
+    ),
+    activeSince: z.preprocess(emptyToUndef, activeSinceField.optional()),
+    languages: z.preprocess(
+      emptyToUndef,
+      z
+        .string()
+        .transform((val) =>
+          // Comma-separated for the spreadsheet ("Hindi, Marathi, English");
+          // semicolons also accepted for symmetry with the `tags` column.
+          val
+            .split(/[;,]/)
+            .map((l) => l.trim())
+            .filter(Boolean),
+        )
+        .pipe(languagesField)
+        .optional()
+        .default([]),
+    ),
+    extraDetails: z.preprocess(emptyToUndef, extraDetailsField.optional()),
+    phoneType: z.preprocess(
+      coercePhoneType,
+      phoneTypeField.optional(),
+    ),
+    notOnWhatsapp: z.preprocess(
+      coerceNotOnWhatsapp,
+      z.boolean().optional().default(false),
+    ),
+    address: z.preprocess(emptyToUndef, addressField.optional()),
+    /** Optional `createdAt` override — the importer accepts a parsed
+     *  `Date` here, set by the route handler from the CSV's "Date"
+     *  column. Routed through `z.coerce.date()` so ISO strings sent
+     *  by future API clients also work. Falls back to `now()` in the
+     *  route when absent or unparseable. */
+    createdAt: z.preprocess(
+      emptyToUndef,
+      z.coerce.date().optional(),
+    ),
   })
   .refine((value) => Boolean(value.phone) || Boolean(value.email), {
     message: 'Either phone or email is required',
@@ -556,6 +807,24 @@ const tagsFromWebhook = z
   ])
   .pipe(tagsField);
 
+/**
+ * Accept languages as either an array of strings or a single
+ * comma/semicolon-separated string ("Hindi, English"). Mirrors the
+ * `tagsFromWebhook` pattern so embedded forms can send whichever shape
+ * is easier to produce on the client.
+ */
+const languagesFromWebhook = z
+  .union([
+    z.array(languageField),
+    z.string().transform((val) =>
+      val
+        .split(/[;,]/)
+        .map((l) => l.trim())
+        .filter(Boolean),
+    ),
+  ])
+  .pipe(languagesField);
+
 export const leadWebhookSchema = z
   .object({
     name: nameField,
@@ -572,6 +841,20 @@ export const leadWebhookSchema = z
     page: urlField.optional(),
     notes: notesField.optional(),
     tags: tagsFromWebhook.optional(),
+    // v0.1.4 — Chitly-spreadsheet fields. snake_case for the public
+    // wire format (mirrors `utm_source` above); the transform below
+    // maps them to internal camelCase column names so the route
+    // handler can hand the result straight to Prisma.
+    age: ageField.optional(),
+    active_since: activeSinceField.optional(),
+    languages: languagesFromWebhook.optional(),
+    extra_details: extraDetailsField.optional(),
+    phone_type: z.preprocess(coercePhoneType, phoneTypeField.optional()),
+    not_on_whatsapp: z.preprocess(
+      coerceNotOnWhatsapp,
+      z.boolean().optional().default(false),
+    ),
+    address: addressField.optional(),
   })
   .refine((value) => Boolean(value.phone) || Boolean(value.email), {
     message: 'Either phone or email is required',
@@ -590,6 +873,13 @@ export const leadWebhookSchema = z
     referringPage: val.page,
     notes: val.notes,
     tags: val.tags ?? [],
+    age: val.age,
+    activeSince: val.active_since,
+    languages: val.languages ?? [],
+    extraDetails: val.extra_details,
+    phoneType: val.phone_type,
+    notOnWhatsapp: val.not_on_whatsapp,
+    address: val.address,
   }));
 
 export type LeadWebhookInput = z.infer<typeof leadWebhookSchema>;
@@ -629,6 +919,16 @@ export const leadPublicProjection = {
   convertedAt: true,
   createdAt: true,
   updatedAt: true,
+  // v0.1.4 — Chitly-spreadsheet columns surfaced on every read so the
+  // detail page, list table, and CSV-export endpoints all see the
+  // same shape.
+  age: true,
+  activeSince: true,
+  languages: true,
+  extraDetails: true,
+  phoneType: true,
+  notOnWhatsapp: true,
+  address: true,
   owner: {
     select: {
       id: true,
@@ -679,5 +979,15 @@ export type LeadPublic = {
   convertedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  // v0.1.4 — Chitly-spreadsheet fields. `phoneType` is stored as
+  // `String?` server-side but is restricted to `PhoneType` on the
+  // write path, so reads observe the same fixed set in practice.
+  age: number | null;
+  activeSince: string | null;
+  languages: string[];
+  extraDetails: string | null;
+  phoneType: PhoneType | string | null;
+  notOnWhatsapp: boolean;
+  address: string | null;
   owner: LeadOwnerEmbed | null;
 };

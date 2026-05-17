@@ -339,6 +339,92 @@ describe('PATCH /api/leads/[id] — activity logging', () => {
   });
 });
 
+describe('PATCH /api/leads/[id] — v0.1.4 Chitly spreadsheet fields', () => {
+  it('persists updates to all 7 new fields and surfaces them on the response', async () => {
+    const { user: admin } = await createTestUser({ role: 'ADMIN' });
+    const lead = await seedLead(admin.id);
+    await setSession({ userId: admin.id, role: 'ADMIN' });
+
+    const res = await PATCH(
+      buildJsonRequest('PATCH', `http://test/api/leads/${lead.id}`, {
+        age: 31,
+        activeSince: '6 months',
+        languages: ['Hindi', 'English'],
+        extraDetails: 'Senior dev, married',
+        phoneType: 'Android',
+        notOnWhatsapp: true,
+        address: 'Bangalore, Karnataka',
+      }),
+      buildRouteContext(lead.id),
+    );
+    expect(res.status).toBe(200);
+    const body = await getJson<{
+      age: number | null;
+      activeSince: string | null;
+      languages: string[];
+      extraDetails: string | null;
+      phoneType: string | null;
+      notOnWhatsapp: boolean;
+      address: string | null;
+    }>(res);
+    expect(body!.age).toBe(31);
+    expect(body!.activeSince).toBe('6 months');
+    expect(body!.languages).toEqual(['Hindi', 'English']);
+    expect(body!.extraDetails).toBe('Senior dev, married');
+    expect(body!.phoneType).toBe('Android');
+    expect(body!.notOnWhatsapp).toBe(true);
+    expect(body!.address).toBe('Bangalore, Karnataka');
+
+    // DB round-trip confirms persistence.
+    const stored = await prisma.lead.findUnique({ where: { id: lead.id } });
+    expect(stored!.age).toBe(31);
+    expect(stored!.activeSince).toBe('6 months');
+    expect(stored!.languages).toEqual(['Hindi', 'English']);
+    expect(stored!.extraDetails).toBe('Senior dev, married');
+    expect(stored!.phoneType).toBe('Android');
+    expect(stored!.notOnWhatsapp).toBe(true);
+    expect(stored!.address).toBe('Bangalore, Karnataka');
+  });
+
+  it('rejects an invalid phoneType ("BlackBerry") with 400', async () => {
+    const { user: admin } = await createTestUser({ role: 'ADMIN' });
+    const lead = await seedLead(admin.id);
+    await setSession({ userId: admin.id, role: 'ADMIN' });
+
+    const res = await PATCH(
+      buildJsonRequest('PATCH', `http://test/api/leads/${lead.id}`, {
+        phoneType: 'BlackBerry',
+      }),
+      buildRouteContext(lead.id),
+    );
+    expect(res.status).toBe(400);
+    const body = await getJson<{ error: string }>(res);
+    expect(body!.error).toBe('bad_request');
+
+    // Row untouched — original (null) phoneType survives.
+    const stored = await prisma.lead.findUnique({ where: { id: lead.id } });
+    expect(stored!.phoneType).toBeNull();
+  });
+
+  it('rejects a `languages` payload over the 16-item cap with 400', async () => {
+    const { user: admin } = await createTestUser({ role: 'ADMIN' });
+    const lead = await seedLead(admin.id);
+    await setSession({ userId: admin.id, role: 'ADMIN' });
+
+    const tooMany = Array.from({ length: 17 }, (_, i) => `L${i}`);
+
+    const res = await PATCH(
+      buildJsonRequest('PATCH', `http://test/api/leads/${lead.id}`, {
+        languages: tooMany,
+      }),
+      buildRouteContext(lead.id),
+    );
+    expect(res.status).toBe(400);
+    const body = await getJson<{ error: string }>(res);
+    expect(body!.error).toBe('bad_request');
+  });
+});
+
 describe('PATCH /api/leads/[id] — validation', () => {
   it('returns 400 on an empty PATCH body', async () => {
     const { user: admin } = await createTestUser({ role: 'ADMIN' });

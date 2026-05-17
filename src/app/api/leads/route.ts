@@ -233,6 +233,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ...(input.nextFollowUpAt !== undefined
           ? { nextFollowUpAt: input.nextFollowUpAt }
           : {}),
+        // v0.1.4 — Chitly-spreadsheet fields. `age` and `phoneType` are
+        // nullable on the schema, so `null` is a legal explicit value
+        // (operator clearing the cell on edit) and must NOT be filtered
+        // out the same way `undefined` is.
+        ...(input.age !== undefined ? { age: input.age } : {}),
+        ...(input.activeSince !== undefined ? { activeSince: input.activeSince } : {}),
+        languages: input.languages,
+        ...(input.extraDetails !== undefined
+          ? { extraDetails: input.extraDetails }
+          : {}),
+        ...(input.phoneType !== undefined ? { phoneType: input.phoneType } : {}),
+        notOnWhatsapp: input.notOnWhatsapp,
+        ...(input.address !== undefined ? { address: input.address } : {}),
         ownerId: resolvedOwnerId,
         createdById: session.userId,
       },
