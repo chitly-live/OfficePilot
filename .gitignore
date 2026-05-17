@@ -1,0 +1,60 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/*
+!.yarn/releases
+!.yarn/plugins
+!.yarn/sdks
+!.yarn/versions
+
+# Testing
+/coverage
+/playwright-report
+/test-results
+/blob-report
+
+# Next.js
+/.next/
+/out/
+
+# Production
+/build
+
+# Compiled cron worker (worker/index.ts → dist/worker/**)
+/dist
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Env
+.env
+.env*.local
+.env.production
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+
+# Prisma
+/prisma/migrations/*/migration.sql.bak
+
+# IDE
+/.idea
+/.vscode/*
+!/.vscode/settings.json
+!/.vscode/extensions.json
+
+# Claude Code local settings (contains user-specific permission allowlist with paths)
+/.claude/
+
+# OS-specific
+Thumbs.db

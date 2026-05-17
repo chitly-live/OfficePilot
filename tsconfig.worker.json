@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": ["es2020"],
+    "noEmit": false,
+    "outDir": "./dist/worker",
+    "rootDir": ".",
+    "incremental": false,
+    "isolatedModules": false,
+    "jsx": "preserve",
+    "plugins": [],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "skipLibCheck": true
+  },
+  "include": [
+    "worker/**/*",
+    "src/lib/cron.ts",
+    "src/lib/db.ts"
+  ],
+  "exclude": ["node_modules", ".next", "tests", "dist", "**/*.test.ts"]
+}

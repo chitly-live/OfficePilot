@@ -1,0 +1,341 @@
+// schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  INTERESTED
+  FOLLOW_UP
+  CONVERTED
+  LOST
+}
+
+enum LeadSource {
+  WEBSITE
+  WHATSAPP
+  FACEBOOK_AD
+  GOOGLE_AD
+  INSTAGRAM
+  REFERRAL
+  MANUAL
+  OTHER
+}
+
+enum CampaignChannel {
+  META_ADS
+  GOOGLE_ADS
+  INSTAGRAM_ORGANIC
+  YOUTUBE
+  INFLUENCER
+  EMAIL
+  OTHER
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  FACEBOOK
+  TWITTER
+  LINKEDIN
+  YOUTUBE
+  THREADS
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+enum DevTaskStatus {
+  TODO
+  DOING
+  DONE
+}
+
+enum DevTaskType {
+  FEATURE
+  BUG
+  CHORE
+  RELEASE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(EMPLOYEE)
+  phone        String?
+  designation  String?
+  joinedAt     DateTime @default(now())
+  isActive     Boolean  @default(true)
+  avatarUrl    String?
+  // Per-module access list for EMPLOYEE role users (v0.1.3 / FEATURE-A).
+  // Empty array = legacy/default = all employee-accessible modules visible
+  // (backward compat). Admins ignore this field — they always see all
+  // modules. Module IDs: 'dashboard', 'employees', 'leads', 'marketing',
+  // 'social', 'dev'. ('ai' and 'settings/users' are admin-only regardless.)
+  moduleAccess String[] @default([])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownedLeads   Lead[]        @relation("LeadOwner")
+  createdLeads Lead[]        @relation("LeadCreator")
+  campaigns    Campaign[]
+  socialPosts  SocialPost[]
+  devTasks     DevTask[]     @relation("TaskAssignee")
+  reportedBugs DevTask[]     @relation("TaskReporter")
+  notes        Note[]
+  activities   ActivityLog[]
+  attendance   Attendance[]
+}
+
+model Lead {
+  id       String     @id @default(cuid())
+  name     String
+  phone    String?
+  email    String?
+  company  String?
+  city     String?
+  source   LeadSource @default(MANUAL)
+  status   LeadStatus @default(NEW)
+  priority Priority   @default(MEDIUM)
+  value    Float? // estimated value in INR
+  notes    String?    @db.Text
+  tags     String[]   @default([])
+
+  ownerId     String?
+  owner       User?   @relation("LeadOwner", fields: [ownerId], references: [id])
+  createdById String
+  createdBy   User    @relation("LeadCreator", fields: [createdById], references: [id])
+
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+
+  nextFollowUpAt DateTime?
+  convertedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activities ActivityLog[]
+
+  @@index([status])
+  @@index([ownerId])
+  @@index([source])
+  @@index([nextFollowUpAt])
+}
+
+model Campaign {
+  id          String          @id @default(cuid())
+  name        String
+  channel     CampaignChannel
+  status      CampaignStatus  @default(DRAFT)
+  startDate   DateTime
+  endDate     DateTime?
+  budget      Float // INR
+  spent       Float           @default(0)
+  impressions Int             @default(0)
+  clicks      Int             @default(0)
+  signups     Int             @default(0)
+  conversions Int             @default(0)
+  notes       String?         @db.Text
+
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String? @unique
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([channel])
+  @@index([startDate])
+}
+
+model SocialPost {
+  id          String         @id @default(cuid())
+  platform    SocialPlatform
+  status      PostStatus     @default(DRAFT)
+  caption     String         @db.Text
+  mediaUrls   String[]       @default([])
+  hashtags    String[]       @default([])
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  externalId  String? // platform post id
+  externalUrl String?
+
+  // performance (manually entered or pulled by job)
+  likes       Int @default(0)
+  comments    Int @default(0)
+  shares      Int @default(0)
+  reach       Int @default(0)
+  impressions Int @default(0)
+
+  isWinner Boolean @default(false) // marked as top performer
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([platform])
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+model DevTask {
+  id          String        @id @default(cuid())
+  title       String
+  description String?       @db.Text
+  type        DevTaskType   @default(FEATURE)
+  status      DevTaskStatus @default(TODO)
+  priority    Priority      @default(MEDIUM)
+
+  // for bugs
+  affectsVersion   String?
+  stepsToReproduce String? @db.Text
+
+  // for releases
+  releaseVersion String?
+  releasedAt     DateTime?
+  platform       String? // "iOS" | "Android" | "Web"
+
+  // roadmap horizon (target week)
+  targetWeek DateTime?
+
+  assigneeId String?
+  assignee   User?   @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  reporterId String
+  reporter   User    @relation("TaskReporter", fields: [reporterId], references: [id])
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  @@index([status])
+  @@index([type])
+  @@index([assigneeId])
+  @@index([targetWeek])
+}
+
+model Note {
+  id         String   @id @default(cuid())
+  body       String   @db.Text
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id])
+  entityType String // "lead" | "campaign" | "devtask"
+  entityId   String
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
+
+model ActivityLog {
+  id         String @id @default(cuid())
+  userId     String
+  user       User   @relation(fields: [userId], references: [id])
+  action     String // "lead.created", "lead.status_changed", "campaign.spent_updated", etc.
+  entityType String
+  entityId   String
+  metadata   Json?
+
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model Attendance {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id])
+  date   DateTime @db.Date
+  status String // "present" | "leave" | "wfh" | "absent"
+  notes  String?
+
+  @@unique([userId, date])
+  @@index([date])
+}
+
+model AIInsight {
+  id          String   @id @default(cuid())
+  generatedAt DateTime @default(now())
+  periodStart DateTime
+  periodEnd   DateTime
+  // Scopes added in v0.1.3: "predictions" (forecast), "anomalies" (spike/drop alerts).
+  scope       String // "ads" | "social" | "leads" | "overall" | "predictions" | "anomalies"
+  trend       String // "up" | "down" | "flat"
+  trendPct    Float?
+  summary     String   @db.Text
+  suggestion  String   @db.Text
+  rawData     Json // snapshot of metrics used
+  tokenUsage  Int?
+
+  @@index([scope])
+  @@index([generatedAt])
+}
+
+/// Claude-generated prioritized action items (v0.1.3 Theme 5).
+/// Generated by /api/ai/actions/generate from the latest AIInsight rows;
+/// admin marks DONE/DISMISSED as they action or triage them.
+model AIAction {
+  id            String    @id @default(cuid())
+  generatedAt   DateTime  @default(now())
+  priority      String // "HIGH" | "MEDIUM" | "LOW"
+  scope         String // which insight scope produced it: "ads" | "social" | "leads" | "overall" | "predictions" | "anomalies"
+  title         String
+  rationale     String    @db.Text
+  // "OPEN" (default) | "DONE" (admin actioned) | "DISMISSED" (not relevant).
+  status        String    @default("OPEN")
+  // Set when status moves to DONE or DISMISSED.
+  resolvedAt    DateTime?
+  resolvedById  String?
+  // Optional link back to the AIInsight that surfaced this action.
+  sourceInsightId String?
+  metadata      Json?
+
+  @@index([priority, status])
+  @@index([status, generatedAt])
+}
+
+model Setting {
+  key   String @id
+  value String @db.Text
+}

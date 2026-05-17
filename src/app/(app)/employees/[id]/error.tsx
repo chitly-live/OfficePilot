@@ -1,0 +1,50 @@
+'use client';
+
+/**
+ * `error.tsx` for `/employees/[id]` — fallback for runtime errors
+ * (Prisma blip, malformed query, etc.). Distinct from `not-found.tsx`
+ * which handles a missing user explicitly via `notFound()`.
+ */
+
+import { useEffect } from 'react';
+import { AlertTriangle } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+
+interface EmployeeDetailErrorProps {
+  error: Error & { digest?: string };
+  reset: () => void;
+}
+
+export default function EmployeeDetailError({
+  error,
+  reset,
+}: EmployeeDetailErrorProps) {
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.error('[employees/[id]] route error', error);
+  }, [error]);
+
+  return (
+    <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed bg-muted/20 px-6 py-16 text-center">
+      <span
+        aria-hidden="true"
+        className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive"
+      >
+        <AlertTriangle className="h-6 w-6" />
+      </span>
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold text-foreground">
+          Couldn&apos;t load this profile
+        </h2>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Something went wrong fetching the employee record. Try again,
+          or refresh the page.
+        </p>
+      </div>
+      <Button type="button" onClick={reset} variant="outline" size="sm">
+        Try again
+      </Button>
+    </div>
+  );
+}
