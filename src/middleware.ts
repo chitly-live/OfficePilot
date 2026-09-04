@@ -83,6 +83,9 @@ const ADMIN_ONLY_PATH_PREFIXES = [
   '/api/settings',
   '/ai',
   '/api/ai/usage',
+  // Finance module (v0.1.5) — money ledger is admin-only for now.
+  '/finance',
+  '/api/finance',
 ] as const;
 
 function hasPrefix(pathname: string, prefixes: readonly string[]): boolean {

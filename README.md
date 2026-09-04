@@ -20,7 +20,7 @@ A self-hosted, single-tenant, role-based internal tool that replaces the typical
 
 ## 🎯 Features
 
-### 8 modules under one roof
+### 9 modules under one roof
 
 | Module | What it does |
 |---|---|
@@ -30,6 +30,7 @@ A self-hosted, single-tenant, role-based internal tool that replaces the typical
 | 📢 **Marketing** | Campaigns with budget/spend/signups tracking, auto-CAC calculation, UTM generator, channel comparison charts |
 | 📱 **Social** | Post composer with scheduled calendar view, performance log, winners gallery, hashtag library |
 | 💻 **Dev Tracking** | Linear-style kanban for the app team, bug inbox, release log, 8-week roadmap |
+| 💰 **Finance** | Admin-only cash ledger: money in / out by category, monthly income vs expense, parties (financers, card owners, hosts, vendors) with a running "we owe" balance, accounts (bank / cash / UPI / borrowed credit cards) with balances |
 | 🤖 **AI Analysis** ⭐ | **The USP** — 6 scopes (ads, social, leads, overall, predictions, anomalies) + prioritized action list. Mixed-model strategy: Haiku for cheap routine, Sonnet for analytical, Opus for strategic action prioritization. |
 | ⚙️ **Settings** | Admin-only: API keys (encrypted AES-256-GCM), SMTP, Meta Ads, Google Ads, Instagram, per-scope Claude model selection, hashtag library, user management |
 
@@ -156,8 +157,8 @@ officepilot/
 
 | Suite | Command | Count | What it covers |
 |---|---|---|---|
-| Unit | `npm run test` | 236 tests, 6 files | `src/lib/` helpers — permissions, activity, utm, crypto, trend, env |
-| Integration | `npm run test:int` | 265 tests, 18 files | Every API route against real Postgres — auth gates, validation, persistence, audit log |
+| Unit | `npm run test` | 272 tests, 7 files | `src/lib/` helpers — permissions, activity, utm, crypto, trend, env, finance |
+| Integration | `npm run test:int` | 302 tests, 20 files | Every API route against real Postgres — auth gates, validation, persistence, audit log |
 | E2E | `npm run test:e2e` | 16 tests, 8 files | Critical user flows via Playwright (chromium + Pixel 5 mobile) |
 
 Quality signals:

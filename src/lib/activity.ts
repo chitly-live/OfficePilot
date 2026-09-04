@@ -129,6 +129,20 @@ export const ACTIVITY_ACTIONS = {
    * appear in the log payload — only the ping outcome.
    */
   SETTINGS_GOOGLE_ADS_TEST: 'settings.google_ads_test',
+
+  // Finance module (v0.1.5) — income / expense ledger, parties, accounts.
+  // Transaction metadata carries `{ direction, amount, categoryLabel,
+  // partyName? }` so the feed can say "recorded expense ₹6,000 (Ads) to
+  // Facebook" without a lookup.
+  FINANCE_TRANSACTION_CREATED: 'finance.transaction_created',
+  FINANCE_TRANSACTION_UPDATED: 'finance.transaction_updated',
+  FINANCE_TRANSACTION_DELETED: 'finance.transaction_deleted',
+  FINANCE_PARTY_CREATED: 'finance.party_created',
+  FINANCE_PARTY_UPDATED: 'finance.party_updated',
+  FINANCE_PARTY_DELETED: 'finance.party_deleted',
+  FINANCE_ACCOUNT_CREATED: 'finance.account_created',
+  FINANCE_ACCOUNT_UPDATED: 'finance.account_updated',
+  FINANCE_ACCOUNT_DELETED: 'finance.account_deleted',
 } as const;
 
 /** Every dotted action string the app emits. Derived from the values of
@@ -614,6 +628,45 @@ export function formatActivity(activity: FormattableActivity): string {
         ? `${userName} updated setting ${key}`
         : `${userName} updated a setting`;
     }
+
+    // -- Finance ------------------------------------------------------------
+    case ACTIVITY_ACTIONS.FINANCE_TRANSACTION_CREATED:
+    case ACTIVITY_ACTIONS.FINANCE_TRANSACTION_UPDATED:
+    case ACTIVITY_ACTIONS.FINANCE_TRANSACTION_DELETED: {
+      const verb =
+        activity.action === ACTIVITY_ACTIONS.FINANCE_TRANSACTION_CREATED
+          ? 'recorded'
+          : activity.action === ACTIVITY_ACTIONS.FINANCE_TRANSACTION_UPDATED
+            ? 'updated'
+            : 'deleted';
+      const direction = readString(meta, 'direction');
+      const noun =
+        direction === 'IN'
+          ? 'income'
+          : direction === 'OUT'
+            ? 'expense'
+            : 'transaction';
+      const amount = readNumber(meta, 'amount');
+      const categoryLabel = readString(meta, 'categoryLabel');
+      const partyName = readString(meta, 'partyName');
+      const parts = [`${userName} ${verb} ${noun}`];
+      if (amount != null) parts.push(formatInr(amount));
+      if (categoryLabel) parts.push(`(${categoryLabel})`);
+      if (partyName) parts.push(`${direction === 'IN' ? 'from' : 'to'} ${partyName}`);
+      return parts.join(' ');
+    }
+    case ACTIVITY_ACTIONS.FINANCE_PARTY_CREATED:
+      return `${userName} added finance party ${entityName}`;
+    case ACTIVITY_ACTIONS.FINANCE_PARTY_UPDATED:
+      return `${userName} updated finance party ${entityName}`;
+    case ACTIVITY_ACTIONS.FINANCE_PARTY_DELETED:
+      return `${userName} deleted finance party ${entityName}`;
+    case ACTIVITY_ACTIONS.FINANCE_ACCOUNT_CREATED:
+      return `${userName} added finance account ${entityName}`;
+    case ACTIVITY_ACTIONS.FINANCE_ACCOUNT_UPDATED:
+      return `${userName} updated finance account ${entityName}`;
+    case ACTIVITY_ACTIONS.FINANCE_ACCOUNT_DELETED:
+      return `${userName} deleted finance account ${entityName}`;
 
     default:
       return `${userName} performed ${activity.action} on ${entityName}`;

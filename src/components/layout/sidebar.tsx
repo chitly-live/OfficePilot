@@ -49,6 +49,7 @@ import {
   Sparkles,
   UserPlus,
   Users,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react';
 import type { Role } from '@prisma/client';
@@ -82,6 +83,7 @@ const PRIMARY_NAV: NavItem[] = [
   { href: '/marketing', label: 'Marketing', icon: Megaphone, module: 'marketing' },
   { href: '/social', label: 'Social', icon: Share2, module: 'social' },
   { href: '/dev', label: 'Dev', icon: Code2, module: 'dev' },
+  { href: '/finance', label: 'Finance', icon: Wallet, adminOnly: true },
   { href: '/ai', label: 'AI Analysis', icon: Sparkles, adminOnly: true },
 ];
 
