@@ -57,6 +57,9 @@ import {
  */
 const PUBLIC_PATH_PREFIXES = [
   '/login',
+  // Self-service password reset pages. Their APIs live under `/api/auth`.
+  '/forgot-password',
+  '/reset-password',
   '/api/auth',
   '/api/webhooks',
   '/api/cron',

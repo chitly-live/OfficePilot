@@ -74,7 +74,7 @@ const emailField = z
   .toLowerCase()
   .email('Invalid email address');
 
-const passwordField = z
+export const passwordField = z
   .string()
   .min(MIN_PASSWORD_LENGTH, `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
   .max(MAX_PASSWORD_LENGTH, `Password must be ${MAX_PASSWORD_LENGTH} characters or fewer`);

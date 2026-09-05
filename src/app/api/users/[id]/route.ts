@@ -258,6 +258,8 @@ export async function PATCH(
     if (input.isActive !== undefined) data.isActive = input.isActive;
     if (input.password !== undefined) {
       data.passwordHash = await hash(input.password, BCRYPT_COST);
+      // Signs the user's other devices out on their next session re-check.
+      data.passwordChangedAt = new Date();
     }
 
     // Normalise moduleAccess + capture the previous value for activity

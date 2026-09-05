@@ -208,6 +208,9 @@ export const authConfig: NextAuthConfig = {
         // `authorize()` always selects `moduleAccess`; default to an
         // empty array if a future provider returns a user without it.
         token.moduleAccess = user.moduleAccess ?? [];
+        // Sign-in time. Compared with `User.passwordChangedAt` on every
+        // re-check so a password reset signs every other device out.
+        token.auth = Date.now();
         // Stamp the check timestamp so the first post-login re-check
         // doesn't fire for another full interval — we just verified
         // `isActive` inside `authorize()`.
@@ -233,7 +236,12 @@ export const authConfig: NextAuthConfig = {
           // query cheap even at scale. `moduleAccess` rides along so an
           // admin's update to the whitelist propagates within one
           // re-check interval.
-          select: { isActive: true, role: true, moduleAccess: true },
+          select: {
+            isActive: true,
+            role: true,
+            moduleAccess: true,
+            passwordChangedAt: true,
+          },
         });
 
         if (!dbUser || !dbUser.isActive) {
@@ -242,6 +250,18 @@ export const authConfig: NextAuthConfig = {
           // usable session. Setting `deactivated` lets the session
           // callback log/branch if it ever needs to distinguish "no
           // session" from "revoked session".
+          delete token.userId;
+          token.deactivated = true;
+          return token;
+        }
+
+        // The password changed after this session signed in (self-service
+        // reset or admin edit) → this session is no longer trusted.
+        if (
+          dbUser.passwordChangedAt !== null &&
+          typeof token.auth === 'number' &&
+          dbUser.passwordChangedAt.getTime() > token.auth
+        ) {
           delete token.userId;
           token.deactivated = true;
           return token;

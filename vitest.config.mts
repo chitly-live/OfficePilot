@@ -114,6 +114,13 @@ export default defineConfig({
         'src/lib/mailer.ts',
         'src/lib/aggregations/**/*.ts',
         'src/lib/schemas/**/*.ts',
+        // DB-backed loaders / services (Finance summaries, password-reset
+        // service). Same rationale as `aggregations/`: the value is the
+        // SQL Prisma emits, which the integration suite covers.
+        'src/lib/finance-summary.ts',
+        'src/lib/finance-query.ts',
+        'src/lib/finance-refs.ts',
+        'src/lib/password-reset-service.ts',
       ],
       // SPEC §16.1 / §19 DoD: ≥80 % line coverage on `src/lib/`.
       // Per-file thresholds enforce the same floor on each pure helper

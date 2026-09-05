@@ -63,6 +63,10 @@ export const ACTIVITY_ACTIONS = {
   // `from` and `to` arrays in metadata so the audit feed can show the
   // exact transition.
   USER_MODULE_ACCESS_CHANGED: 'user.module_access_changed',
+  // Self-service "forgot password" flow. The actor is the account owner
+  // (`userId` === `entityId`); no admin is involved.
+  USER_PASSWORD_RESET_REQUESTED: 'user.password_reset_requested',
+  USER_PASSWORD_RESET_COMPLETED: 'user.password_reset_completed',
   ATTENDANCE_MARKED: 'user.attendance_marked',
 
   // Leads module — SPEC.md §6
@@ -486,6 +490,10 @@ export function formatActivity(activity: FormattableActivity): string {
       return `${userName} deactivated user ${entityName}`;
     case ACTIVITY_ACTIONS.USER_LOGIN:
       return `${userName} logged in`;
+    case ACTIVITY_ACTIONS.USER_PASSWORD_RESET_REQUESTED:
+      return `${userName} requested a password reset link`;
+    case ACTIVITY_ACTIONS.USER_PASSWORD_RESET_COMPLETED:
+      return `${userName} reset their password`;
     case ACTIVITY_ACTIONS.ATTENDANCE_MARKED: {
       const status = readString(meta, 'status');
       const date = readString(meta, 'date');

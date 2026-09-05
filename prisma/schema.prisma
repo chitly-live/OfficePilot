@@ -103,6 +103,10 @@ model User {
   // modules. Module IDs: 'dashboard', 'employees', 'leads', 'marketing',
   // 'social', 'dev'. ('ai' and 'settings/users' are admin-only regardless.)
   moduleAccess String[] @default([])
+  // Set whenever the password changes (self-service reset or admin edit).
+  // The JWT callback compares it with the session's sign-in time so a
+  // password reset signs every other device out within ~5 minutes.
+  passwordChangedAt DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -117,6 +121,24 @@ model User {
   attendance          Attendance[]
   financeParties      FinanceParty[]       @relation("FinancePartyCreator")
   financeTransactions FinanceTransaction[] @relation("FinanceTransactionCreator")
+  passwordResetTokens PasswordResetToken[]
+}
+
+/// One "forgot password" link. Only the SHA-256 of the emailed token is
+/// stored, so a database leak cannot be replayed. Single use, 30-minute
+/// expiry, newest link invalidates older ones (see src/lib/password-reset-service.ts).
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  requestIp String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
 }
 
 model Lead {

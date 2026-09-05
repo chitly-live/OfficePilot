@@ -25,7 +25,7 @@ A self-hosted, single-tenant, role-based internal tool that replaces the typical
 | Module | What it does |
 |---|---|
 | 📊 **Dashboard** | 4-row unified pulse: today's metrics, latest AI insights, release+campaign timeline, follow-up reminders |
-| 👥 **Employees** | Roster, role-based access (admin/employee), **per-module visibility permissions**, attendance, performance snapshots |
+| 👥 **Employees** | Roster, role-based access (admin/employee), **per-module visibility permissions**, attendance, performance snapshots, self-service **forgot password** (emailed single-use link, 30-min expiry) |
 | 📥 **Leads** | Full CRM: capture (manual + CSV + webhook), 6-stage pipeline kanban, owner assignment, follow-up reminders, activity timeline, UTM auto-attribution |
 | 📢 **Marketing** | Campaigns with budget/spend/signups tracking, auto-CAC calculation, UTM generator, channel comparison charts |
 | 📱 **Social** | Post composer with scheduled calendar view, performance log, winners gallery, hashtag library |
@@ -54,7 +54,7 @@ A self-hosted, single-tenant, role-based internal tool that replaces the typical
 - **Anthropic SDK** (Claude — Opus 4.7 / Sonnet 4.6 / Haiku 4.5) for AI Analysis
 - **Recharts** for dashboards
 - **react-hook-form** + **zod** for forms
-- **Vitest** + **Playwright** for testing (236 unit + 265 integration + 16 E2E)
+- **Vitest** + **Playwright** for testing (286 unit + 313 integration + 16 E2E)
 - **node-cron** worker (PM2-managed in prod) for scheduled jobs
 - **AES-256-GCM** for at-rest secret encryption
 - **nodemailer** for SMTP (Gmail / SES / any standard provider)
@@ -124,7 +124,7 @@ officepilot/
 ├── src/
 │   ├── app/                # Next.js App Router (pages + API routes)
 │   │   ├── (app)/          # Authenticated app shell — dashboard, modules
-│   │   ├── (auth)/         # Login page
+│   │   ├── (auth)/         # Login, forgot-password, reset-password pages
 │   │   └── api/            # 35+ REST endpoints
 │   ├── lib/                # Domain libs — auth, prisma, crypto, claude, permissions
 │   │   ├── aggregations/   # 6 AI scope data builders (ads, social, leads, overall, predictions, anomalies)
@@ -139,7 +139,7 @@ officepilot/
 │   └── seed.ts             # Idempotent admin seed
 ├── worker/                 # Standalone cron worker (node-cron + PM2)
 ├── tests/
-│   ├── integration/        # 18 files, 265 tests (real Postgres)
+│   ├── integration/        # 21 files, 313 tests (real Postgres)
 │   └── e2e/                # 8 Playwright specs across chromium + mobile-chrome projects
 ├── docs/
 │   ├── HANDOFF.md          # Per-release proof + change log
@@ -157,8 +157,8 @@ officepilot/
 
 | Suite | Command | Count | What it covers |
 |---|---|---|---|
-| Unit | `npm run test` | 272 tests, 7 files | `src/lib/` helpers — permissions, activity, utm, crypto, trend, env, finance |
-| Integration | `npm run test:int` | 302 tests, 20 files | Every API route against real Postgres — auth gates, validation, persistence, audit log |
+| Unit | `npm run test` | 286 tests, 8 files | `src/lib/` helpers — permissions, activity, utm, crypto, trend, env, finance, password-reset |
+| Integration | `npm run test:int` | 313 tests, 21 files | Every API route against real Postgres — auth gates, validation, persistence, audit log |
 | E2E | `npm run test:e2e` | 16 tests, 8 files | Critical user flows via Playwright (chromium + Pixel 5 mobile) |
 
 Quality signals:

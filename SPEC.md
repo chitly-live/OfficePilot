@@ -68,7 +68,7 @@ This is **NOT** a clone of HubSpot/Jira/Buffer. It is a focused internal tool wi
 - Email + password (bcrypt hashed, cost factor 12).
 - Session-based via NextAuth.js with JWT strategy (no Redis dependency).
 - Session expiry: 7 days, sliding renewal.
-- Forgot password: admin resets manually (no public reset flow for v1).
+- Forgot password: self-service email link (`/forgot-password` → `/reset-password?token=…`). Token is 32 random bytes, stored as SHA-256, single use, 30-minute expiry, max 3 requests per account per hour; the response never reveals whether the email exists. A completed reset stamps `User.passwordChangedAt`, which signs out every other session on its next re-check. Admins can still set a password from Employees. (v1 shipped with admin-only resets; self-service added Sept 2026.)
 - 2FA: out of scope for v1.
 
 ### 2.3 Seed data

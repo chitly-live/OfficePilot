@@ -77,6 +77,8 @@ declare module 'next-auth/jwt' {
     userId?: string;
     role: Role;
     chk?: number;
+    /** Sign-in time (epoch ms). Compared with `User.passwordChangedAt`. */
+    auth?: number;
     deactivated?: boolean;
     moduleAccess?: string[];
   }
@@ -93,6 +95,8 @@ declare module '@auth/core/jwt' {
     userId?: string;
     role: Role;
     chk?: number;
+    /** Sign-in time (epoch ms). Compared with `User.passwordChangedAt`. */
+    auth?: number;
     deactivated?: boolean;
     moduleAccess?: string[];
   }
