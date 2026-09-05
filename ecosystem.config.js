@@ -33,7 +33,14 @@ module.exports = {
   apps: [
     {
       name: 'officepilot-web',
-      script: 'npm',
+      // Run Next's own entry point, NOT `npm start`. PM2 cluster mode
+      // shares the listening port between instances through Node's
+      // `cluster` module, which only works when PM2 launches the Node
+      // script itself. With `script: 'npm'` each instance spawned its own
+      // `next start` child; the second one could never bind the port and
+      // crash-looped until PM2 marked it "errored" (seen in prod on every
+      // release: one instance online, one errored with 15 restarts).
+      script: 'node_modules/next/dist/bin/next',
       args: 'start',
       instances: 2,
       exec_mode: 'cluster',
