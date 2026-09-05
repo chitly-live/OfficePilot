@@ -43,6 +43,16 @@ import { z } from 'zod';
  *
  * Per SPEC.md §12.2.
  */
+/** Company identity printed on Finance report exports (Excel / PDF). */
+const companyNameField = z
+  .string()
+  .trim()
+  .max(200, 'Company name must be 200 characters or fewer');
+const companyAddressField = z
+  .string()
+  .trim()
+  .max(500, 'Company address must be 500 characters or fewer');
+
 export const SENSITIVE_KEYS = [
   'anthropic_api_key',
   'webhook_hmac_secret',
@@ -99,6 +109,8 @@ export const KNOWN_KEYS = [
   'claude_model_actions',
   'daily_digest_hour',
   'currency',
+  'company_name',
+  'company_address',
   'hashtag_sets',
   'followup_reminder_hour',
   // SMTP — admin-configurable email transport (SPEC.md §12.1 +
@@ -434,6 +446,20 @@ export function validateSettingValue(
       return parsed.success
         ? { ok: true, value: parsed.data }
         : { ok: false, message: parsed.error.issues[0]?.message ?? 'Invalid currency' };
+    }
+
+    case 'company_name': {
+      const parsed = companyNameField.safeParse(rawValue);
+      return parsed.success
+        ? { ok: true, value: parsed.data }
+        : { ok: false, message: parsed.error.issues[0]?.message ?? 'Invalid company name' };
+    }
+
+    case 'company_address': {
+      const parsed = companyAddressField.safeParse(rawValue);
+      return parsed.success
+        ? { ok: true, value: parsed.data }
+        : { ok: false, message: parsed.error.issues[0]?.message ?? 'Invalid company address' };
     }
 
     case 'hashtag_sets': {

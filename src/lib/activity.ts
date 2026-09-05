@@ -147,6 +147,8 @@ export const ACTIVITY_ACTIONS = {
   FINANCE_ACCOUNT_CREATED: 'finance.account_created',
   FINANCE_ACCOUNT_UPDATED: 'finance.account_updated',
   FINANCE_ACCOUNT_DELETED: 'finance.account_deleted',
+  /** Excel / PDF report download. Metadata: `period`, `format`. */
+  FINANCE_REPORT_EXPORTED: 'finance.report_exported',
 } as const;
 
 /** Every dotted action string the app emits. Derived from the values of
@@ -675,6 +677,14 @@ export function formatActivity(activity: FormattableActivity): string {
       return `${userName} updated finance account ${entityName}`;
     case ACTIVITY_ACTIONS.FINANCE_ACCOUNT_DELETED:
       return `${userName} deleted finance account ${entityName}`;
+    case ACTIVITY_ACTIONS.FINANCE_REPORT_EXPORTED: {
+      const period = readString(meta, 'period');
+      const format = readString(meta, 'format');
+      const detail = [period, format ? format.toUpperCase() : null]
+        .filter(Boolean)
+        .join(', ');
+      return `${userName} exported a finance report${detail ? ` (${detail})` : ''}`;
+    }
 
     default:
       return `${userName} performed ${activity.action} on ${entityName}`;

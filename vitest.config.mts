@@ -121,6 +121,10 @@ export default defineConfig({
         'src/lib/finance-query.ts',
         'src/lib/finance-refs.ts',
         'src/lib/password-reset-service.ts',
+        // Report renderers (ExcelJS / react-pdf) — exercised end-to-end by
+        // the export route's integration test, not unit-tested in isolation.
+        'src/lib/finance-report-xlsx.ts',
+        'src/lib/finance-report-pdf.tsx',
       ],
       // SPEC §16.1 / §19 DoD: ≥80 % line coverage on `src/lib/`.
       // Per-file thresholds enforce the same floor on each pure helper

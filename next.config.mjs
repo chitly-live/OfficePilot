@@ -14,6 +14,10 @@ const nextConfig = {
     // beyond enabling discovery, but documenting the intent is worth
     // the line.
     instrumentationHook: true,
+    // Finance report exports. Both libraries ship native/wasm bits
+    // (yoga-layout) and dynamic requires that webpack must not bundle —
+    // they are loaded from node_modules at runtime instead.
+    serverComponentsExternalPackages: ['@react-pdf/renderer', 'exceljs'],
   },
 };
 

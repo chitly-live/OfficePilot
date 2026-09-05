@@ -48,6 +48,7 @@ import { StatCard } from '@/components/shared/StatCard';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { cn } from '@/lib/utils';
 
+import { ExportDialog } from './export-dialog';
 import { FinanceNav } from './finance-nav';
 import { FinanceTrendChart } from './finance-trend-chart';
 import { PARTY_TYPE_TONE, amountClass, amountSign } from './finance-ui';
@@ -106,6 +107,7 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
         subtitle="Income, expenses, and who we still owe — one ledger for the office."
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <ExportDialog defaultMonth={monthKey} />
             <Button asChild variant="outline" size="sm">
               <Link href={`/finance/transactions/new?direction=IN&month=${monthKey}`}>
                 <ArrowDownLeft className="h-4 w-4" aria-hidden="true" />

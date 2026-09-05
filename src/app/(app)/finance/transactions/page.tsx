@@ -28,6 +28,7 @@ import { Pagination } from '@/components/shared/Pagination';
 import { StatCard } from '@/components/shared/StatCard';
 import { cn } from '@/lib/utils';
 
+import { ExportDialog } from '../export-dialog';
 import { FinanceNav } from '../finance-nav';
 import { ALL_MONTHS } from '../finance-ui';
 import { TransactionsFilters } from './transactions-filters';
@@ -136,6 +137,7 @@ export default async function TransactionsPage({
         subtitle={`${windowLabel} — every rupee in and out.`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <ExportDialog defaultMonth={monthParam} />
             <Button asChild variant="outline" size="sm">
               <Link href={`${newHrefBase}&direction=IN`}>
                 <ArrowDownLeft className="h-4 w-4" aria-hidden="true" />

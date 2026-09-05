@@ -618,6 +618,37 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
               <code className="ml-1">USD</code>).
             </p>
           </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="company_name">Company name</Label>
+            <Input
+              id="company_name"
+              autoComplete="organization"
+              placeholder="Praxxel Technologies Private Limited"
+              maxLength={200}
+              value={values.company_name}
+              onChange={(e) => setValue('company_name', e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Printed in the header of Finance report exports (Excel / PDF)
+              and used in their file names.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="company_address">Company address / GSTIN</Label>
+            <Textarea
+              id="company_address"
+              rows={2}
+              maxLength={500}
+              placeholder="Registered address, GSTIN, CIN — whatever the accountant needs to see"
+              value={values.company_address}
+              onChange={(e) => setValue('company_address', e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional second line under the company name on Finance reports.
+            </p>
+          </div>
         </TabsContent>
 
         {/* --------------------------------------------------------- */}
