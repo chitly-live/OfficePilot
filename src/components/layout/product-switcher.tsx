@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { PRODUCT_COOKIE, SCOPE_ALL, SCOPE_COMPANY, type ProductOption } from '@/lib/products';
+import { PRODUCT_COOKIE, type ProductOption } from '@/lib/products';
 import { cn } from '@/lib/utils';
 
 export interface ProductSwitcherProps {
@@ -43,13 +43,8 @@ export function ProductSwitcher({ products, current, companyShort }: ProductSwit
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
 
-  const active = products.find((p) => p.slug === current);
-  const label =
-    current === SCOPE_COMPANY
-      ? `${companyShort} · company`
-      : active
-        ? active.name
-        : `${companyShort} · all`;
+  const active = products.find((p) => p.slug === current) ?? products[0];
+  const label = active ? active.name : companyShort;
 
   function choose(value: string) {
     document.cookie = `${PRODUCT_COOKIE}=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
@@ -72,20 +67,9 @@ export function ProductSwitcher({ products, current, companyShort }: ProductSwit
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-60">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">Viewing</DropdownMenuLabel>
-        <DropdownMenuItem onSelect={() => choose(SCOPE_ALL)} className="gap-2">
-          <Layers className="h-4 w-4" aria-hidden="true" />
-          <span className="flex-1">{companyShort} · all products</span>
-          {current === SCOPE_ALL || (!active && current !== SCOPE_COMPANY) ? (
-            <Check className="h-4 w-4" aria-hidden="true" />
-          ) : null}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => choose(SCOPE_COMPANY)} className="gap-2">
-          <Dot color="#94a3b8" />
-          <span className="flex-1">{companyShort} · company-level only</span>
-          {current === SCOPE_COMPANY ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
-        </DropdownMenuItem>
-        {products.length > 0 ? <DropdownMenuSeparator /> : null}
+        <DropdownMenuLabel className="text-xs text-muted-foreground">
+          {companyShort} products
+        </DropdownMenuLabel>
         {products.map((p) => (
           <DropdownMenuItem key={p.id} onSelect={() => choose(p.slug)} className="gap-2">
             <Dot color={p.color} />
@@ -98,6 +82,13 @@ export function ProductSwitcher({ products, current, companyShort }: ProductSwit
             No products yet. Add them in Settings → Products.
           </div>
         ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild className="gap-2">
+          <a href="/settings">
+            <Layers className="h-4 w-4" aria-hidden="true" />
+            <span className="flex-1">Manage products</span>
+          </a>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

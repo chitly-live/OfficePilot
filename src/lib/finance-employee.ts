@@ -13,6 +13,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 import { round2, shiftMonthKey, toMonthKey } from '@/lib/finance';
+import { productWhere, type ProductScope } from '@/lib/products';
 import {
   salaryPaidByMonth,
   salaryStatus,
@@ -169,6 +170,8 @@ export interface SalaryBoard {
 export async function loadSalaryBoard(
   db: PrismaClient,
   month: string,
+  /** Only count salary payouts booked against this product. */
+  scope: ProductScope = { kind: 'all' },
 ): Promise<SalaryBoard> {
   const users = await db.user.findMany({
     where: { isActive: true, monthlySalary: { gt: 0 } },
@@ -190,6 +193,7 @@ export async function loadSalaryBoard(
     ? await db.financeTransaction.groupBy({
         by: ['partyId'],
         where: {
+          ...productWhere(scope),
           partyId: { in: partyIds },
           category: 'SALARY',
           direction: 'OUT',
@@ -200,7 +204,14 @@ export async function loadSalaryBoard(
     : [];
   const paidByParty = new Map(paidRows.map((r) => [r.partyId as string, r._sum.amount ?? 0]));
 
-  const rows: SalaryBoardRow[] = users.map((u) => {
+  // In a product view only the people this product actually paid are listed —
+  // an employee paid out of another product would otherwise look unpaid here.
+  const visibleUsers =
+    scope.kind === 'all'
+      ? users
+      : users.filter((u) => u.financeParty?.id && paidByParty.has(u.financeParty.id));
+
+  const rows: SalaryBoardRow[] = visibleUsers.map((u) => {
     const partyId = u.financeParty?.id ?? null;
     const paid = round2(partyId ? paidByParty.get(partyId) ?? 0 : 0);
     return {

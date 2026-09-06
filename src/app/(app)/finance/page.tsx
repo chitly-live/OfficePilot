@@ -101,8 +101,10 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
     scope: productContext.scope,
     companyLabel: `${productContext.companyShort} (company-level)`,
   });
-  const salaryBoard = await loadSalaryBoard(prisma, monthKey);
-  const cards = (await loadCardOverview(prisma)).filter((c) => c.isActive);
+  const salaryBoard = await loadSalaryBoard(prisma, monthKey, productContext.scope);
+  const cards = (await loadCardOverview(prisma, new Date(), productContext.scope)).filter(
+    (c) => c.isActive,
+  );
   const cardTone: Record<CardHealth, 'green' | 'amber' | 'red' | 'neutral'> = {
     OK: 'green',
     HIGH: 'amber',
@@ -284,8 +286,8 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
         </Card>
       </div>
 
-      {/* Per-product split — only when viewing the whole company */}
-      {summary.byProduct.length > 0 ? (
+      {/* Per-product split — only when no single product is selected */}
+      {productContext.scope.kind === 'all' && summary.byProduct.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">By product — {monthLabel(monthKey)}</CardTitle>
@@ -336,23 +338,20 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
         </Card>
       ) : null}
 
-      {/* Credit cards: outstanding vs limit, next bill. Cards belong to the
-          company, so this stays out of a single product's view. */}
-      {productContext.scope.kind !== 'product' &&
-      cards.some((c) => c.position.outstanding !== 0 || c.creditLimit) ? (
+      {/* Credit cards this product actually used. The limit, bill and
+          outstanding are the card's real figures — cards are shared. */}
+      {cards.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Credit cards</CardTitle>
             <CardDescription>
-              Outstanding on each borrowed card (spend minus the repayments that settle it),
-              how much limit is left, and when the next bill is due.
+              Cards {scopeText} spent on. The outstanding, limit and bill date belong to the
+              card itself, which may be shared with other products.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="divide-y">
-              {cards
-                .filter((c) => c.position.outstanding !== 0 || c.creditLimit)
-                .map((c) => (
+              {cards.map((c) => (
                   <li
                     key={c.id}
                     className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm"
@@ -405,8 +404,8 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
         </Card>
       ) : null}
 
-      {/* Salaries for the selected month — company-level, never per product. */}
-      {productContext.scope.kind !== 'product' && salaryBoard.rows.length > 0 ? (
+      {/* Salaries paid out of this product for the selected month. */}
+      {salaryBoard.rows.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Salaries — {monthLabel(monthKey)}</CardTitle>
@@ -469,10 +468,7 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
             <CardTitle className="text-base">Outstanding — what we owe</CardTitle>
             <CardDescription>
               Loans taken from financers and spend on borrowed credit cards, minus what
-              we&apos;ve paid back. All-time.
-              {productContext.scope.kind !== 'all'
-                ? ` Counting ${scopeText} entries only — card repayments are company-level, so switch to ${productContext.companyShort} · all products for the real balance.`
-                : ''}
+              we&apos;ve paid back. All-time, counting {scopeText} entries only.
               {totalOwed > 0 ? (
                 <span className="ml-1 font-medium text-foreground">
                   Total {formatInr(totalOwed)}.
@@ -537,7 +533,7 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
             <CardDescription>
               {productContext.scope.kind === 'all'
                 ? "Balance = opening + money in − money out (all-time). This month's flow alongside."
-                : `Accounts and cards belong to ${productContext.companyShort}. The figure is what ${scopeText} moved through each, all-time.`}
+                : `What ${scopeText} moved through each account, all-time. The instruments themselves are shared across products.`}
             </CardDescription>
           </CardHeader>
           <CardContent>

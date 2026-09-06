@@ -9,7 +9,7 @@ import { ArrowLeft } from 'lucide-react';
 
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { getProductContext, loadProducts } from '@/lib/products-server';
+import { loadProducts } from '@/lib/products-server';
 import {
   FINANCE_CATEGORY_META,
   formatDateUtc,
@@ -62,7 +62,7 @@ export default async function TransactionDetailPage({ params }: PageProps) {
     redirect('/dashboard');
   }
 
-  const [row, partyRows, accountRows, productRows, productContext] = await Promise.all([
+  const [row, partyRows, accountRows, productRows] = await Promise.all([
     prisma.financeTransaction.findUnique({
       where: { id: params.id },
       select: financeTransactionProjection,
@@ -84,7 +84,6 @@ export default async function TransactionDetailPage({ params }: PageProps) {
       take: 200,
     }),
     loadProducts(prisma, { includeInactive: true }),
-    getProductContext(prisma),
   ]);
   if (!row) notFound();
 
@@ -162,7 +161,6 @@ export default async function TransactionDetailPage({ params }: PageProps) {
             parties={parties}
             accounts={accounts}
             products={products}
-            companyLabel={`${productContext.companyShort} (company-level, no product)`}
             initialValues={{
               direction: txn.direction,
               productId: txn.productId ?? undefined,

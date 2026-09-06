@@ -48,10 +48,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       to = range.to;
     }
 
-    // `?product=` overrides the header cookie; both fall back to "all".
+    // `?product=` picks one product (slug) or `company`; without it the API
+    // reports the whole company, which is what an integration / report caller
+    // wants. The UI pages read the header cookie themselves.
     const ctx = await getProductContext(prisma);
-    const scope =
-      query.product !== undefined ? resolveProductScope(query.product, ctx.products) : ctx.scope;
+    const scope = resolveProductScope(query.product, ctx.products);
     if (query.product !== undefined && query.product !== 'all' && scope.kind === 'all') {
       throw new BadRequestError('Unknown product');
     }

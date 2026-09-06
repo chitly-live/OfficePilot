@@ -9,7 +9,7 @@ import type { PrismaClient } from '@prisma/client';
 
 import {
   PRODUCT_COOKIE,
-  resolveProductScope,
+  resolveHeaderScope,
   shortCompanyName,
   type ProductOption,
   type ProductScope,
@@ -59,7 +59,7 @@ export async function getProductContext(db: PrismaClient): Promise<ProductContex
   const companyName = setting?.value.trim() || 'OfficePilot';
   return {
     products,
-    scope: resolveProductScope(raw, products),
+    scope: resolveHeaderScope(raw, products),
     companyName,
     companyShort: shortCompanyName(companyName),
   };

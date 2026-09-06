@@ -30,6 +30,22 @@ export type ProductScope =
   | { kind: 'company' }
   | { kind: 'product'; product: ProductOption };
 
+/**
+ * Header scope: always one product. Every ledger row belongs to a product,
+ * so there is no combined or company-level view to switch to — an unknown
+ * or missing cookie simply lands on the first product.
+ */
+export function resolveHeaderScope(
+  raw: string | null | undefined,
+  products: readonly ProductOption[],
+): ProductScope {
+  const value = (raw ?? '').trim();
+  const chosen = products.find((p) => p.slug === value && p.isActive);
+  if (chosen) return { kind: 'product', product: chosen };
+  const first = products.find((p) => p.isActive);
+  return first ? { kind: 'product', product: first } : { kind: 'all' };
+}
+
 /** Cookie / query value → scope. Unknown or inactive slugs fall back to `all`. */
 export function resolveProductScope(
   raw: string | null | undefined,

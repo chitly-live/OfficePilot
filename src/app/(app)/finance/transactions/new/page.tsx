@@ -156,7 +156,6 @@ export default async function NewTransactionPage({
             parties={parties}
             accounts={accounts}
             products={productContext.products}
-            companyLabel={`${productContext.companyShort} (company-level, no product)`}
             initialValues={{
               direction,
               ...(productId ? { productId } : {}),

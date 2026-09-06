@@ -153,8 +153,6 @@ export interface TransactionFormProps {
   accounts: AccountOption[];
   /** Products (business lines) the row can be tagged with. */
   products?: ProductFormOption[];
-  /** Label for the "no product" option, e.g. "Praxxel (company-level)". */
-  companyLabel?: string;
   /** Pre-filled values (edit mode, or `?direction=` style prefills). */
   initialValues?: Partial<FormValues>;
   /** Where to go after a successful save. */
@@ -172,7 +170,6 @@ export function TransactionForm({
   parties,
   accounts,
   products = [],
-  companyLabel = 'Company-level (no product)',
   initialValues,
   returnTo,
 }: TransactionFormProps) {
@@ -194,7 +191,7 @@ export function TransactionForm({
       viaPartyId: initialValues?.viaPartyId ?? NONE_VALUE,
       accountId: initialValues?.accountId ?? NONE_VALUE,
       settlesAccountId: initialValues?.settlesAccountId ?? NONE_VALUE,
-      productId: initialValues?.productId ?? NONE_VALUE,
+      productId: initialValues?.productId ?? products[0]?.id ?? NONE_VALUE,
       description: initialValues?.description ?? '',
       reference: initialValues?.reference ?? '',
       hasOriginal: initialValues?.hasOriginal ?? false,
@@ -518,7 +515,6 @@ export function TransactionForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value={NONE_VALUE}>{companyLabel}</SelectItem>
                     {products.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
                         <span className="inline-flex items-center gap-2">
@@ -534,8 +530,8 @@ export function TransactionForm({
                   </SelectContent>
                 </Select>
                 <FormDescription>
-                  Which business line this belongs to. Salary, bank charges, CA fees and
-                  card repayments are usually company-level.
+                  Which business line this entry belongs to. Every entry belongs to one
+                  product; switch products in the top bar to see them apart.
                 </FormDescription>
                 <FormMessage />
               </FormItem>

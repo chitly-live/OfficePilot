@@ -6,6 +6,8 @@
 
 import type { PrismaClient } from '@prisma/client';
 
+import { productWhere, type ProductScope } from '@/lib/products';
+
 import {
   cardHealth,
   computeCardPosition,
@@ -34,6 +36,12 @@ export interface CardOverview {
 export async function loadCardOverview(
   db: PrismaClient,
   now: Date = new Date(),
+  /**
+   * When a product is selected, only the cards that product spent on are
+   * returned. Each card's outstanding, limit and cycle stay the card's real
+   * figures — cards are shared instruments, not per-product ones.
+   */
+  scope: ProductScope = { kind: 'all' },
 ): Promise<CardOverview[]> {
   const cards = await db.financeAccount.findMany({
     where: { type: 'CREDIT_CARD' },
@@ -64,7 +72,24 @@ export async function loadCardOverview(
 
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
 
-  return cards.map((card) => {
+  // Cards touched by the selected product (spend or a repayment that settles it).
+  let visible: Set<string> | null = null;
+  if (scope.kind !== 'all') {
+    const scoped = await db.financeTransaction.findMany({
+      where: {
+        ...productWhere(scope),
+        OR: [{ accountId: { in: ids } }, { settlesAccountId: { in: ids } }],
+      },
+      select: { accountId: true, settlesAccountId: true },
+    });
+    visible = new Set<string>();
+    for (const r of scoped) {
+      if (r.accountId) visible.add(r.accountId);
+      if (r.settlesAccountId) visible.add(r.settlesAccountId);
+    }
+  }
+
+  return cards.filter((card) => visible === null || visible.has(card.id)).map((card) => {
     const ledger: CardLedgerRow[] = rows
       .filter((r) => r.accountId === card.id || r.settlesAccountId === card.id)
       .map((r) => ({
