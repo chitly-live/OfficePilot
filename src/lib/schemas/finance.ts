@@ -256,6 +256,8 @@ const transactionBase = {
   accountId: idField.optional(),
   /** CARD_REPAYMENT only: which credit card's bill this payment settles. */
   settlesAccountId: idField.optional(),
+  /** Product this row belongs to; omit / null = company-level. */
+  productId: idField.optional(),
 };
 
 /**
@@ -307,6 +309,7 @@ export const financeTransactionUpdateSchema = z
     viaPartyId: idField.nullable().optional(),
     accountId: idField.nullable().optional(),
     settlesAccountId: idField.nullable().optional(),
+    productId: idField.nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'At least one field must be provided',
@@ -339,6 +342,10 @@ export const financeTransactionListQuerySchema = z
     category: multiEnum(categoryValues).optional(),
     partyId: idField.optional(),
     accountId: idField.optional(),
+    /** Restrict to one product. */
+    productId: idField.optional(),
+    /** `1` → only company-level rows (productId null). Ignored when `productId` is set. */
+    companyOnly: z.enum(['1', 'true']).optional(),
     month: monthKeyField.optional(),
     dateFrom: dateField.optional(),
     dateTo: dateField.optional(),
@@ -478,6 +485,8 @@ export const financeSummaryQuerySchema = z
     month: monthKeyField.optional(),
     dateFrom: dateField.optional(),
     dateTo: dateField.optional(),
+    /** `all` (default), `company`, or a product slug. Overrides the header cookie. */
+    product: z.string().trim().min(1).max(40).optional(),
   })
   .refine(
     (val) => !val.dateFrom || !val.dateTo || val.dateFrom <= val.dateTo,
@@ -569,6 +578,7 @@ export const financeTransactionProjection = {
   viaPartyId: true,
   accountId: true,
   settlesAccountId: true,
+  productId: true,
   createdById: true,
   createdAt: true,
   updatedAt: true,
@@ -580,6 +590,9 @@ export const financeTransactionProjection = {
   },
   settlesAccount: {
     select: { id: true, name: true },
+  },
+  product: {
+    select: { id: true, name: true, slug: true, color: true },
   },
   account: {
     select: { id: true, name: true, type: true, ownerPartyId: true },
@@ -604,12 +617,14 @@ export type FinanceTransactionPublic = {
   viaPartyId: string | null;
   accountId: string | null;
   settlesAccountId: string | null;
+  productId: string | null;
   createdById: string;
   createdAt: Date;
   updatedAt: Date;
   party: { id: string; name: string; type: FinancePartyType } | null;
   viaParty: { id: string; name: string; type: FinancePartyType } | null;
   settlesAccount: { id: string; name: string } | null;
+  product: { id: string; name: string; slug: string; color: string | null } | null;
   account: {
     id: string;
     name: string;

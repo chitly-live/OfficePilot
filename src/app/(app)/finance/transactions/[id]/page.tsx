@@ -9,6 +9,7 @@ import { ArrowLeft } from 'lucide-react';
 
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { getProductContext, loadProducts } from '@/lib/products-server';
 import {
   FINANCE_CATEGORY_META,
   formatDateUtc,
@@ -61,7 +62,7 @@ export default async function TransactionDetailPage({ params }: PageProps) {
     redirect('/dashboard');
   }
 
-  const [row, partyRows, accountRows] = await Promise.all([
+  const [row, partyRows, accountRows, productRows, productContext] = await Promise.all([
     prisma.financeTransaction.findUnique({
       where: { id: params.id },
       select: financeTransactionProjection,
@@ -82,6 +83,8 @@ export default async function TransactionDetailPage({ params }: PageProps) {
       orderBy: [{ name: 'asc' }],
       take: 200,
     }),
+    loadProducts(prisma, { includeInactive: true }),
+    getProductContext(prisma),
   ]);
   if (!row) notFound();
 
@@ -100,6 +103,10 @@ export default async function TransactionDetailPage({ params }: PageProps) {
       type: a.type,
       ownerName: a.ownerParty?.name ?? null,
     }));
+
+  const products = productRows
+    .filter((p) => p.isActive || p.id === txn.productId)
+    .map((p) => ({ id: p.id, name: p.name, color: p.color }));
 
   const meta = FINANCE_CATEGORY_META[txn.category];
   const label =
@@ -154,8 +161,11 @@ export default async function TransactionDetailPage({ params }: PageProps) {
             transactionId={txn.id}
             parties={parties}
             accounts={accounts}
+            products={products}
+            companyLabel={`${productContext.companyShort} (company-level, no product)`}
             initialValues={{
               direction: txn.direction,
+              productId: txn.productId ?? undefined,
               date: toDateInputValue(txn.date),
               amount: String(txn.amount),
               category: txn.category,

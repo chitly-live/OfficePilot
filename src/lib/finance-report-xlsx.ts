@@ -98,7 +98,9 @@ function companyHeader(ws: ExcelJS.Worksheet, report: FinanceReport, subtitle: s
   r2.getCell(1).font = { size: 10, color: { argb: MUTED } };
   ws.mergeCells(`A2:${last}2`);
 
-  const r3 = ws.addRow([`${subtitle} · ${report.window.label}`]);
+  const r3 = ws.addRow([
+    `${subtitle} · ${report.window.label}${report.scopeLabel ? ` · ${report.scopeLabel}` : ''}`,
+  ]);
   r3.getCell(1).font = { bold: true, size: 13, color: { argb: BRAND } };
   r3.height = 22;
   ws.mergeCells(`A3:${last}3`);
@@ -257,6 +259,7 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
     { width: 13 }, // Date
     { width: 11 }, // Type
     { width: 22 }, // Category
+    { width: 16 }, // Product
     { width: 44 }, // Description
     { width: 28 }, // Party
     { width: 22 }, // Via
@@ -267,13 +270,14 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
     { width: 14 }, // Original amount
     { width: 9 },  // Currency
   ];
-  companyHeader(ws, report, 'Transactions', 12);
+  companyHeader(ws, report, 'Transactions', 13);
   ws.addRow([]);
 
   const headers = [
     'Date',
     'Type',
     'Category',
+    'Product',
     'Description',
     'Party',
     'Routed via',
@@ -286,7 +290,7 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
   ];
   const head = ws.addRow(headers);
   styleHeaderRow(head, headers.length);
-  for (const c of [9, 10, 11]) head.getCell(c).alignment = { horizontal: 'right' };
+  for (const c of [10, 11, 12]) head.getCell(c).alignment = { horizontal: 'right' };
   const firstDataRow = head.number + 1;
 
   report.transactions.forEach((t, i) => {
@@ -294,6 +298,7 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
       t.date,
       t.direction === 'IN' ? 'Money in' : 'Money out',
       t.kind === 'FINANCING' ? `${t.categoryLabel} (not P&L)` : t.categoryLabel,
+      t.productName,
       t.description,
       t.partyName,
       t.viaPartyName,
@@ -313,12 +318,12 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
       color: { argb: t.direction === 'IN' ? GREEN : RED },
     };
     if (t.viaPartyName) {
-      row.getCell(6).font = { size: 10, italic: true, color: { argb: MUTED } };
+      row.getCell(7).font = { size: 10, italic: true, color: { argb: MUTED } };
     }
-    money(row.getCell(9));
     money(row.getCell(10));
-    row.getCell(11).numFmt = '#,##0.00';
-    row.getCell(11).alignment = { horizontal: 'right' };
+    money(row.getCell(11));
+    row.getCell(12).numFmt = '#,##0.00';
+    row.getCell(12).alignment = { horizontal: 'right' };
   });
 
   const lastDataRow = ws.rowCount;
@@ -336,23 +341,24 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
     'Total',
     '',
     '',
+    '',
     `${report.transactionCount} transactions`,
     '',
     '',
     '',
     '',
     report.transactions.length > 0
-      ? { formula: `SUM(I${firstDataRow}:I${lastDataRow})`, result: Math.round(totalIn * 100) / 100 }
+      ? { formula: `SUM(J${firstDataRow}:J${lastDataRow})`, result: Math.round(totalIn * 100) / 100 }
       : 0,
     report.transactions.length > 0
-      ? { formula: `SUM(J${firstDataRow}:J${lastDataRow})`, result: Math.round(totalOut * 100) / 100 }
+      ? { formula: `SUM(K${firstDataRow}:K${lastDataRow})`, result: Math.round(totalOut * 100) / 100 }
       : 0,
     '',
     '',
   ]);
   styleTotalRow(totals, headers.length);
-  money(totals.getCell(9));
   money(totals.getCell(10));
+  money(totals.getCell(11));
 
   ws.autoFilter = {
     from: { row: head.number, column: 1 },

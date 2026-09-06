@@ -93,6 +93,19 @@ export function TransactionsTable({
                     not P&amp;L
                   </span>
                 ) : null}
+                {t.product ? (
+                  <span
+                    className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+                    title={`Product: ${t.product.name}`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="inline-block h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: t.product.color ?? '#94a3b8' }}
+                    />
+                    {t.product.name}
+                  </span>
+                ) : null}
               </div>
             );
           },

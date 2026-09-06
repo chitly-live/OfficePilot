@@ -20,12 +20,15 @@ import type {
   PrismaClient,
 } from '@prisma/client';
 
+import type { ProductScope } from '@/lib/products';
 import {
+  FINANCE_CATEGORY_META,
   computeAccountBalance,
   computePartyBalance,
   groupByCategory,
   monthLabel,
   monthRange,
+  round2,
   shiftMonthKey,
   summarizeRows,
   toMonthKey,
@@ -108,6 +111,21 @@ export interface FinanceSummary {
   monthly: FinanceMonthPoint[];
   recent: FinanceRecentRow[];
   transactionCount: number;
+  /** Operating income / expense per product in the window (`productId`
+   *  null = company-level). Only meaningful when no product filter is
+   *  applied; empty otherwise. */
+  byProduct: FinanceProductTotal[];
+}
+
+export interface FinanceProductTotal {
+  /** `null` = company-level rows. */
+  productId: string | null;
+  name: string;
+  color: string | null;
+  income: number;
+  expense: number;
+  net: number;
+  count: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +139,7 @@ interface DbRow extends LedgerRow {
   partyId: string | null;
   accountId: string | null;
   accountOwnerPartyId: string | null;
+  productId: string | null;
 }
 
 const ROW_SELECT = {
@@ -132,6 +151,7 @@ const ROW_SELECT = {
   description: true,
   partyId: true,
   accountId: true,
+  productId: true,
   account: { select: { ownerPartyId: true } },
 } as const;
 
@@ -144,6 +164,7 @@ type RawRow = {
   description: string | null;
   partyId: string | null;
   accountId: string | null;
+  productId: string | null;
   account: { ownerPartyId: string | null } | null;
 };
 
@@ -158,6 +179,7 @@ function toDbRow(row: RawRow): DbRow {
     partyId: row.partyId,
     accountId: row.accountId,
     accountOwnerPartyId: row.account?.ownerPartyId ?? null,
+    productId: row.productId,
   };
 }
 
@@ -251,10 +273,17 @@ export async function loadAccountBalances(
 export async function loadFinanceSummary(
   db: FinanceDbClient,
   window: { from: Date; to: Date },
+  opts: {
+    /** Header scope: filter every figure to one product / company-level. */
+    scope?: ProductScope;
+    /** Label used for the company-level bucket in `byProduct`. */
+    companyLabel?: string;
+  } = {},
 ): Promise<FinanceSummary> {
   const { from, to } = window;
+  const scope: ProductScope = opts.scope ?? { kind: 'all' };
 
-  const [allRows, parties, accounts] = await Promise.all([
+  const [everyRow, parties, accounts, products] = await Promise.all([
     loadAllRows(db),
     db.financeParty.findMany({
       select: { id: true, name: true, type: true },
@@ -268,9 +297,17 @@ export async function loadFinanceSummary(
         ownerParty: { select: { name: true } },
       },
     }),
+    db.product.findMany({ select: { id: true, name: true, color: true, sortOrder: true } }),
   ]);
 
   const partyById = new Map(parties.map((p) => [p.id, p]));
+
+  const allRows =
+    scope.kind === 'all'
+      ? everyRow
+      : everyRow.filter((r) =>
+          scope.kind === 'company' ? r.productId === null : r.productId === scope.product.id,
+        );
 
   const inWindow = allRows.filter(
     (r) => r.date.getTime() >= from.getTime() && r.date.getTime() <= to.getTime(),
@@ -390,6 +427,39 @@ export async function loadFinanceSummary(
         : null,
     }));
 
+  // -- Per-product split (window, only when unscoped) -------------------------
+  const byProduct: FinanceProductTotal[] = [];
+  if (scope.kind === 'all') {
+    const acc = new Map<string | null, FinanceProductTotal>();
+    const sorted = [...products].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+    for (const pr of sorted) {
+      acc.set(pr.id, { productId: pr.id, name: pr.name, color: pr.color, income: 0, expense: 0, net: 0, count: 0 });
+    }
+    acc.set(null, {
+      productId: null,
+      name: opts.companyLabel ?? 'Company-level',
+      color: null,
+      income: 0,
+      expense: 0,
+      net: 0,
+      count: 0,
+    });
+    for (const row of inWindow) {
+      const key = row.productId && acc.has(row.productId) ? row.productId : null;
+      const bucket = acc.get(key)!;
+      bucket.count += 1;
+      if (FINANCE_CATEGORY_META[row.category].kind !== 'OPERATING') continue;
+      if (row.direction === 'IN') bucket.income += row.amount;
+      else bucket.expense += row.amount;
+    }
+    for (const bucket of acc.values()) {
+      bucket.net = round2(bucket.income - bucket.expense);
+      bucket.income = round2(bucket.income);
+      bucket.expense = round2(bucket.expense);
+      if (bucket.count > 0 || bucket.productId !== null) byProduct.push(bucket);
+    }
+  }
+
   return {
     from,
     to,
@@ -403,5 +473,6 @@ export async function loadFinanceSummary(
     monthly,
     recent,
     transactionCount: inWindow.length,
+    byProduct,
   };
 }

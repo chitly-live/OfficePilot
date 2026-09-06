@@ -18,6 +18,7 @@ import {
   formatInr,
 } from '@/lib/finance';
 import { loadPartyBalance } from '@/lib/finance-summary';
+import { loadProducts } from '@/lib/products-server';
 import {
   financePartyProjection,
   financeTransactionProjection,
@@ -68,7 +69,7 @@ export default async function PartyDetailPage({ params }: PageProps) {
     redirect('/dashboard');
   }
 
-  const [partyRow, ledgerRows, accounts, routedRows] = await Promise.all([
+  const [partyRow, ledgerRows, accounts, routedRows, productRows, productSplitRows] = await Promise.all([
     prisma.financeParty.findUnique({
       where: { id: params.id },
       select: financePartyProjection,
@@ -95,8 +96,33 @@ export default async function PartyDetailPage({ params }: PageProps) {
       where: { viaPartyId: params.id },
       select: { direction: true, category: true, amount: true, viaPartyId: true },
     }),
+    loadProducts(prisma, { includeInactive: true }),
+    // Product split: rows linked to this party or made on their accounts.
+    prisma.financeTransaction.findMany({
+      where: {
+        OR: [{ partyId: params.id }, { account: { ownerPartyId: params.id } }],
+      },
+      select: { productId: true, direction: true, amount: true },
+    }),
   ]);
   if (!partyRow) notFound();
+
+  const productSplit = (() => {
+    const byId = new Map(productRows.map((p) => [p.id, p]));
+    const acc = new Map<string | null, { name: string; color: string | null; paidTo: number; receivedFrom: number; count: number }>();
+    for (const r of productSplitRows) {
+      const key = r.productId && byId.has(r.productId) ? r.productId : null;
+      const meta = key ? byId.get(key)! : { name: 'Company-level', color: null };
+      const bucket = acc.get(key) ?? { name: meta.name, color: meta.color, paidTo: 0, receivedFrom: 0, count: 0 };
+      bucket.count += 1;
+      if (r.direction === 'OUT') bucket.paidTo += r.amount;
+      else bucket.receivedFrom += r.amount;
+      acc.set(key, bucket);
+    }
+    return [...acc.entries()]
+      .map(([productId, v]) => ({ productId, ...v }))
+      .sort((a, b) => b.paidTo + b.receivedFrom - (a.paidTo + a.receivedFrom));
+  })();
 
   const party = partyRow as unknown as FinancePartyPublic;
   const balance = await loadPartyBalance(prisma, party.id);
@@ -267,6 +293,38 @@ export default async function PartyDetailPage({ params }: PageProps) {
         </div>
 
         <aside className="space-y-4">
+          {productSplit.length > 1 || (productSplit.length === 1 && productSplit[0].productId !== null) ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">By product</CardTitle>
+                <CardDescription>
+                  All-time money to / from {party.name}, split by business line.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                {productSplit.map((row) => (
+                  <div key={row.productId ?? 'company'} className="flex items-center justify-between gap-3">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="inline-block h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: row.color ?? '#94a3b8' }}
+                      />
+                      <span className="truncate">{row.name}</span>
+                      <span className="text-xs text-muted-foreground">· {row.count}</span>
+                    </span>
+                    <span className="shrink-0 text-right text-xs tabular-nums">
+                      {row.paidTo > 0 ? <div className="text-status-red">−{formatInr(row.paidTo)}</div> : null}
+                      {row.receivedFrom > 0 ? (
+                        <div className="text-status-green">+{formatInr(row.receivedFrom)}</div>
+                      ) : null}
+                    </span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
+
           {passThrough.count > 0 ? (
             <Card className="border-status-amber/40">
               <CardHeader>

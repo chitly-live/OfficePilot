@@ -13,6 +13,7 @@ import { FinanceCategory, FinanceDirection } from '@prisma/client';
 
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { getProductContext } from '@/lib/products-server';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -85,7 +86,7 @@ export default async function NewTransactionPage({
         ? `/finance/transactions?month=${month}`
         : '/finance/transactions';
 
-  const [partyRows, accountRows] = await Promise.all([
+  const [partyRows, accountRows, productContext] = await Promise.all([
     prisma.financeParty.findMany({
       where: { isActive: true },
       select: { id: true, name: true, type: true },
@@ -103,7 +104,18 @@ export default async function NewTransactionPage({
       orderBy: [{ name: 'asc' }],
       take: 200,
     }),
+    getProductContext(prisma),
   ]);
+
+  // Default product = whatever the header switcher is set to; `?productId=`
+  // wins when a page deep-links with one.
+  const rawProductId = coerceParam(searchParams?.productId);
+  const productId =
+    rawProductId && productContext.products.some((p) => p.id === rawProductId)
+      ? rawProductId
+      : productContext.scope.kind === 'product'
+        ? productContext.scope.product.id
+        : undefined;
 
   const parties = partyRows;
   const accounts = accountRows.map((a) => ({
@@ -143,8 +155,11 @@ export default async function NewTransactionPage({
             mode="create"
             parties={parties}
             accounts={accounts}
+            products={productContext.products}
+            companyLabel={`${productContext.companyShort} (company-level, no product)`}
             initialValues={{
               direction,
+              ...(productId ? { productId } : {}),
               ...(category ? { category } : {}),
               ...(partyId && parties.some((p) => p.id === partyId) ? { partyId } : {}),
               ...(accountId && accounts.some((a) => a.id === accountId)

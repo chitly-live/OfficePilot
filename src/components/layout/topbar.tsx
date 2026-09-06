@@ -27,6 +27,7 @@
  * truth for nav structure.
  */
 
+import * as React from 'react';
 import { useState } from 'react';
 import { Menu, Search } from 'lucide-react';
 import type { Role } from '@prisma/client';
@@ -96,9 +97,11 @@ export interface TopbarProps {
      *  drawer matches the desktop nav filter. */
     moduleAccess?: string[];
   };
+  /** Product switcher rendered by the server layout (needs cookies + DB). */
+  productSwitcher?: React.ReactNode;
 }
 
-export function Topbar({ user }: TopbarProps) {
+export function Topbar({ user, productSwitcher }: TopbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const initials = getInitials(user.name, user.email);
@@ -134,6 +137,10 @@ export function Topbar({ user }: TopbarProps) {
           />
         </SheetContent>
       </Sheet>
+
+      {/* Product switcher — which business line the product-scoped
+          modules (Finance today) are showing. */}
+      {productSwitcher}
 
       {/* Search — placeholder until cmd+k palette lands. */}
       <div className="relative flex-1 max-w-xl">

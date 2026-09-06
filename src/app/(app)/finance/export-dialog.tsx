@@ -32,13 +32,17 @@ type Format = 'xlsx' | 'pdf';
 export interface ExportDialogProps {
   /** `'YYYY-MM'` to preselect, or `'all'`. */
   defaultMonth?: string;
+  /** Product scope from the header switcher: `'all'`, `'company'` or a slug. */
+  product?: string;
+  /** Human label for that scope, shown in the dialog. */
+  productLabel?: string;
 }
 
 function isMonthKey(v: string | undefined): v is string {
   return typeof v === 'string' && /^\d{4}-\d{2}$/.test(v);
 }
 
-export function ExportDialog({ defaultMonth }: ExportDialogProps) {
+export function ExportDialog({ defaultMonth, product, productLabel }: ExportDialogProps) {
   const [open, setOpen] = React.useState(false);
   const [period, setPeriod] = React.useState<Period>(
     defaultMonth === ALL_MONTHS ? 'all' : 'month',
@@ -51,6 +55,7 @@ export function ExportDialog({ defaultMonth }: ExportDialogProps) {
   const [format, setFormat] = React.useState<Format>('xlsx');
 
   const params = new URLSearchParams({ format });
+  if (product && product !== 'all') params.set('product', product);
   if (period === 'month') params.set('month', month);
   else if (period === 'all') params.set('all', '1');
   else {
@@ -88,6 +93,15 @@ export function ExportDialog({ defaultMonth }: ExportDialogProps) {
           <DialogDescription>
             Summary, category totals, accounts, outstanding balances and every
             transaction for the period. Ready to send to the accountant.
+            {productLabel ? (
+              <>
+                {' '}
+                Scope: <span className="font-medium text-foreground">{productLabel}</span>
+                {product && product !== 'all'
+                  ? ' (switch the product in the top bar for the whole company).'
+                  : '.'}
+              </>
+            ) : null}
           </DialogDescription>
         </DialogHeader>
 

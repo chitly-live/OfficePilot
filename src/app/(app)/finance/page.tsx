@@ -37,6 +37,8 @@ import { CARD_HEALTH_LABELS, type CardHealth } from '@/lib/credit-card';
 import { loadCardOverview } from '@/lib/finance-cards';
 import { loadSalaryBoard } from '@/lib/finance-employee';
 import { loadFinanceSummary } from '@/lib/finance-summary';
+import { scopeLabel, scopeValue } from '@/lib/products';
+import { getProductContext } from '@/lib/products-server';
 import { SALARY_STATUS_LABELS, type SalaryStatus } from '@/lib/salary';
 import { Button } from '@/components/ui/button';
 import {
@@ -93,7 +95,12 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
       : toMonthKey(new Date());
   const range = monthRange(monthKey)!;
 
-  const summary = await loadFinanceSummary(prisma, range);
+  const productContext = await getProductContext(prisma);
+  const scopeText = scopeLabel(productContext.scope, productContext.companyShort);
+  const summary = await loadFinanceSummary(prisma, range, {
+    scope: productContext.scope,
+    companyLabel: `${productContext.companyShort} (company-level)`,
+  });
   const salaryBoard = await loadSalaryBoard(prisma, monthKey);
   const cards = (await loadCardOverview(prisma)).filter((c) => c.isActive);
   const cardTone: Record<CardHealth, 'green' | 'amber' | 'red' | 'neutral'> = {
@@ -123,10 +130,14 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
     <div className="space-y-6">
       <PageHeader
         title="Finance"
-        subtitle="Income, expenses, and who we still owe — one ledger for the office."
+        subtitle={`${scopeText} — income, expenses, and who we still owe.`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <ExportDialog defaultMonth={monthKey} />
+            <ExportDialog
+              defaultMonth={monthKey}
+              product={scopeValue(productContext.scope)}
+              productLabel={scopeText}
+            />
             <Button asChild variant="outline" size="sm">
               <Link href={`/finance/transactions/new?direction=IN&month=${monthKey}`}>
                 <ArrowDownLeft className="h-4 w-4" aria-hidden="true" />
@@ -272,6 +283,58 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Per-product split — only when viewing the whole company */}
+      {summary.byProduct.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">By product — {monthLabel(monthKey)}</CardTitle>
+            <CardDescription>
+              Operating income and expense per business line. Company-level rows (salary,
+              bank charges, CA, card repayments) sit under {productContext.companyShort}.
+              Use the switcher in the top bar to open one product.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y">
+              {summary.byProduct.map((row) => (
+                <li
+                  key={row.productId ?? 'company'}
+                  className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: row.color ?? '#94a3b8' }}
+                    />
+                    <span className="truncate font-medium text-foreground">{row.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      · {row.count} row{row.count === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 tabular-nums">
+                    <span className="text-status-green">+{formatInr(row.income)}</span>
+                    <span className="text-status-red">−{formatInr(row.expense)}</span>
+                    <span
+                      className={cn(
+                        'min-w-[6rem] text-right font-semibold',
+                        row.net > 0
+                          ? 'text-status-green'
+                          : row.net < 0
+                            ? 'text-status-red'
+                            : 'text-foreground',
+                      )}
+                    >
+                      {formatInr(row.net)}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Credit cards: outstanding vs limit, next bill */}
       {cards.some((c) => c.position.outstanding !== 0 || c.creditLimit) ? (

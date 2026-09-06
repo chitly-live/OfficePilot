@@ -79,7 +79,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           Office<span className="text-brand-600">Pilot</span>
         </span>
         <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          by Chitly
+          by Praxxel
         </span>
       </div>
 

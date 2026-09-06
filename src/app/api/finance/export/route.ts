@@ -27,6 +27,8 @@ import {
 } from '@/lib/finance-report';
 import { buildFinanceReportPdf } from '@/lib/finance-report-pdf';
 import { buildFinanceReportXlsx } from '@/lib/finance-report-xlsx';
+import { resolveProductScope } from '@/lib/products';
+import { loadProducts } from '@/lib/products-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,6 +39,8 @@ const exportQuerySchema = z.object({
   dateFrom: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
   dateTo: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
   all: z.enum(['1', 'true']).optional(),
+  /** `all` (default), `company`, or a product slug. */
+  product: z.string().trim().min(1).max(40).optional(),
 });
 
 const CONTENT_TYPES = {
@@ -59,7 +63,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       throw new BadRequestError('Pick a month (month=YYYY-MM), a date range, or all=1');
     }
 
-    const report = await buildFinanceReport(prisma, window);
+    const products = await loadProducts(prisma);
+    const scope = resolveProductScope(query.product, products);
+    if (query.product !== undefined && query.product !== 'all' && scope.kind === 'all') {
+      throw new BadRequestError('Unknown product');
+    }
+
+    const report = await buildFinanceReport(prisma, window, new Date(), scope);
     const body =
       query.format === 'pdf'
         ? await buildFinanceReportPdf(report)
@@ -77,7 +87,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           period: window.label,
           format: query.format,
           transactions: report.transactionCount,
-          entityName: `${window.label} (${query.format.toUpperCase()})`,
+          ...(report.scopeLabel ? { product: report.scopeLabel } : {}),
+          entityName: `${window.label}${report.scopeLabel ? ` · ${report.scopeLabel}` : ''} (${query.format.toUpperCase()})`,
         },
       });
     } catch (logErr) {

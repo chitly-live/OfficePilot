@@ -30,6 +30,8 @@ export function buildTransactionWhere(
     and.push({ OR: [{ partyId: query.partyId }, { viaPartyId: query.partyId }] });
   }
   if (query.accountId !== undefined) where.accountId = query.accountId;
+  if (query.productId !== undefined) where.productId = query.productId;
+  else if (query.companyOnly !== undefined) where.productId = null;
 
   let from = query.dateFrom;
   let to = query.dateTo;

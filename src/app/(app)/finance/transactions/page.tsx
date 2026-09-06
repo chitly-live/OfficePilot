@@ -13,6 +13,8 @@ import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatInr, monthLabel, summarizeRows, toMonthKey } from '@/lib/finance';
+import { scopeLabel, scopeValue } from '@/lib/products';
+import { getProductContext } from '@/lib/products-server';
 import {
   buildTransactionOrderBy,
   buildTransactionWhere,
@@ -85,12 +87,24 @@ export default async function TransactionsPage({
     rawParams.month = monthParam;
   }
 
+  // Header product switcher scopes the ledger (cookie, not URL).
+  const productContext = await getProductContext(prisma);
+  delete rawParams.productId;
+  delete rawParams.companyOnly;
+  if (productContext.scope.kind === 'product') {
+    rawParams.productId = productContext.scope.product.id;
+  } else if (productContext.scope.kind === 'company') {
+    rawParams.companyOnly = '1';
+  }
+
   const parsed = financeTransactionListQuerySchema.safeParse(rawParams);
   const query = parsed.success
     ? parsed.data
-    : financeTransactionListQuerySchema.parse(
-        monthParam === ALL_MONTHS ? {} : { month: monthParam },
-      );
+    : financeTransactionListQuerySchema.parse({
+        ...(monthParam === ALL_MONTHS ? {} : { month: monthParam }),
+        ...(rawParams.productId ? { productId: rawParams.productId } : {}),
+        ...(rawParams.companyOnly ? { companyOnly: rawParams.companyOnly } : {}),
+      });
 
   const where = buildTransactionWhere(query);
   const orderBy = buildTransactionOrderBy(query);
@@ -127,6 +141,7 @@ export default async function TransactionsPage({
 
   const windowLabel =
     monthParam === ALL_MONTHS ? 'All time' : monthLabel(monthParam);
+  const scopeText = scopeLabel(productContext.scope, productContext.companyShort);
 
   const newHrefBase = `/finance/transactions/new?month=${monthParam}`;
 
@@ -134,10 +149,14 @@ export default async function TransactionsPage({
     <div className="space-y-6">
       <PageHeader
         title="Transactions"
-        subtitle={`${windowLabel} — every rupee in and out.`}
+        subtitle={`${windowLabel} · ${scopeText} — every rupee in and out.`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <ExportDialog defaultMonth={monthParam} />
+            <ExportDialog
+              defaultMonth={monthParam}
+              product={scopeValue(productContext.scope)}
+              productLabel={scopeText}
+            />
             <Button asChild variant="outline" size="sm">
               <Link href={`${newHrefBase}&direction=IN`}>
                 <ArrowDownLeft className="h-4 w-4" aria-hidden="true" />

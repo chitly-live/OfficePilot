@@ -100,7 +100,7 @@ describe('GET /api/finance/export — Excel', () => {
     expect(txns.getRow(6).getCell(1).value).toBe('Date');
     const descriptions: string[] = [];
     txns.eachRow((row, n) => {
-      if (n > 6) descriptions.push(String(row.getCell(4).value ?? ''));
+      if (n > 6) descriptions.push(String(row.getCell(5).value ?? ''));
     });
     expect(descriptions).toContain('Facebook ads');
     expect(descriptions).toContain('Cashfree settlement');

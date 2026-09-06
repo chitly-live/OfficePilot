@@ -269,6 +269,7 @@ function ReportDocument({ report }: { report: FinanceReport }) {
           <View>
             <Text style={styles.reportTitle}>Finance report</Text>
             <Text style={styles.reportMeta}>{report.window.label}</Text>
+            {report.scopeLabel ? <Text style={styles.reportMeta}>{report.scopeLabel}</Text> : null}
             <Text style={styles.reportMeta}>
               {formatDateUtc(report.window.from)} to {formatDateUtc(report.window.to)}
             </Text>
@@ -384,7 +385,8 @@ function ReportDocument({ report }: { report: FinanceReport }) {
       {/* ---------------- Transactions (landscape) ---------------- */}
       <Page size="A4" orientation="landscape" style={[styles.page, { fontFamily }]}>
         <Text style={[styles.section, { marginTop: 0 }]}>
-          Transactions · {report.window.label} · {report.transactionCount} entries
+          Transactions · {report.window.label}
+          {report.scopeLabel ? ` · ${report.scopeLabel}` : ''} · {report.transactionCount} entries
         </Text>
         <Table
           repeatHeader
@@ -402,7 +404,10 @@ function ReportDocument({ report }: { report: FinanceReport }) {
           rows={report.transactions.map((t) => ({
             date: formatDateUtc(t.date),
             type: { text: t.direction === 'IN' ? 'In' : 'Out', tone: t.direction === 'IN' ? 'green' : 'red' },
-            cat: t.kind === 'FINANCING' ? `${t.categoryLabel} (not P&L)` : t.categoryLabel,
+            cat: `${t.kind === 'FINANCING' ? `${t.categoryLabel} (not P&L)` : t.categoryLabel}${
+              t.productName && !report.scopeLabel ? `
+${t.productName}` : ''
+            }`,
             desc:
               t.originalAmount !== null &&
               t.originalCurrency &&

@@ -96,6 +96,8 @@ import {
   type SettingsRecord,
 } from '@/lib/schemas/settings';
 
+import { ProductsPanel } from './products-panel';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -422,6 +424,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
           <TabsTrigger value="ai">AI</TabsTrigger>
           <TabsTrigger value="secrets">Secrets</TabsTrigger>
           <TabsTrigger value="app">App</TabsTrigger>
+          <TabsTrigger value="products">Products</TabsTrigger>
           <TabsTrigger value="hashtags">Hashtag library</TabsTrigger>
           <TabsTrigger value="email">Email (SMTP)</TabsTrigger>
           <TabsTrigger value="meta">Meta Ads</TabsTrigger>
@@ -649,6 +652,13 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
               Optional second line under the company name on Finance reports.
             </p>
           </div>
+        </TabsContent>
+
+        {/* --------------------------------------------------------- */}
+        {/* Products (business lines under the company)                */}
+        {/* --------------------------------------------------------- */}
+        <TabsContent value="products" className="space-y-3">
+          <ProductsPanel />
         </TabsContent>
 
         {/* --------------------------------------------------------- */}

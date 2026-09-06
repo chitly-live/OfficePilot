@@ -30,7 +30,7 @@ A self-hosted, single-tenant, role-based internal tool that replaces the typical
 | 📢 **Marketing** | Campaigns with budget/spend/signups tracking, auto-CAC calculation, UTM generator, channel comparison charts |
 | 📱 **Social** | Post composer with scheduled calendar view, performance log, winners gallery, hashtag library |
 | 💻 **Dev Tracking** | Linear-style kanban for the app team, bug inbox, release log, 8-week roadmap |
-| 💰 **Finance** | Admin-only cash ledger: money in / out by category, monthly income vs expense, parties (financers, card owners, hosts, vendors) with a running "we owe" balance, accounts (bank / cash / UPI / borrowed credit cards) with balances, credit-card limits with per-card outstanding, available limit, billing cycle and due date, routed payments ("bank → Ritu → Shubham": the real party gets the credit, the intermediary is shown as the route), **Excel / PDF report export** per month, date range or all time for the accountant |
+| 💰 **Finance** | Admin-only cash ledger: money in / out by category, monthly income vs expense, parties (financers, card owners, hosts, vendors) with a running "we owe" balance, accounts (bank / cash / UPI / borrowed credit cards) with balances, credit-card limits with per-card outstanding, available limit, billing cycle and due date, routed payments ("bank → Ritu → Shubham": the real party gets the credit, the intermediary is shown as the route), **Excel / PDF report export** per month, date range or all time for the accountant. **Products** (business lines under the company, e.g. Chitly / Arrows Go — Settings → Products) tag every ledger row; the header switcher scopes the overview, ledger, party pages and exports to one product, company-level rows only, or the whole company |
 | 🤖 **AI Analysis** ⭐ | **The USP** — 6 scopes (ads, social, leads, overall, predictions, anomalies) + prioritized action list. Mixed-model strategy: Haiku for cheap routine, Sonnet for analytical, Opus for strategic action prioritization. |
 | ⚙️ **Settings** | Admin-only: API keys (encrypted AES-256-GCM), SMTP, Meta Ads, Google Ads, Instagram, per-scope Claude model selection, hashtag library, user management |
 
@@ -54,7 +54,7 @@ A self-hosted, single-tenant, role-based internal tool that replaces the typical
 - **Anthropic SDK** (Claude — Opus 4.7 / Sonnet 4.6 / Haiku 4.5) for AI Analysis
 - **Recharts** for dashboards
 - **react-hook-form** + **zod** for forms
-- **Vitest** + **Playwright** for testing (316 unit + 329 integration + 16 E2E)
+- **Vitest** + **Playwright** for testing (321 unit + 338 integration + 16 E2E)
 - **node-cron** worker (PM2-managed in prod) for scheduled jobs
 - **AES-256-GCM** for at-rest secret encryption
 - **nodemailer** for SMTP (Gmail / SES / any standard provider)
@@ -139,7 +139,7 @@ officepilot/
 │   └── seed.ts             # Idempotent admin seed
 ├── worker/                 # Standalone cron worker (node-cron + PM2)
 ├── tests/
-│   ├── integration/        # 25 files, 329 tests (real Postgres)
+│   ├── integration/        # 26 files, 338 tests (real Postgres)
 │   └── e2e/                # 8 Playwright specs across chromium + mobile-chrome projects
 ├── docs/
 │   ├── HANDOFF.md          # Per-release proof + change log
@@ -157,8 +157,8 @@ officepilot/
 
 | Suite | Command | Count | What it covers |
 |---|---|---|---|
-| Unit | `npm run test` | 316 tests, 11 files | `src/lib/` helpers — permissions, activity, utm, crypto, trend, env, finance, finance-report, salary, credit-card, password-reset |
-| Integration | `npm run test:int` | 329 tests, 25 files | Every API route against real Postgres — auth gates, validation, persistence, audit log |
+| Unit | `npm run test` | 321 tests, 12 files | `src/lib/` helpers — permissions, activity, utm, crypto, trend, env, finance, finance-report, salary, credit-card, password-reset, products |
+| Integration | `npm run test:int` | 338 tests, 26 files | Every API route against real Postgres — auth gates, validation, persistence, audit log |
 | E2E | `npm run test:e2e` | 16 tests, 8 files | Critical user flows via Playwright (chromium + Pixel 5 mobile) |
 
 Quality signals:

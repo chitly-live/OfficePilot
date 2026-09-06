@@ -18,6 +18,8 @@ import {
 } from '@/lib/api-helpers';
 import { monthRange, toMonthKey } from '@/lib/finance';
 import { loadFinanceSummary } from '@/lib/finance-summary';
+import { resolveProductScope } from '@/lib/products';
+import { getProductContext } from '@/lib/products-server';
 import { financeSummaryQuerySchema } from '@/lib/schemas/finance';
 
 export const runtime = 'nodejs';
@@ -46,8 +48,23 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       to = range.to;
     }
 
-    const summary = await loadFinanceSummary(prisma, { from, to });
-    return NextResponse.json(summary);
+    // `?product=` overrides the header cookie; both fall back to "all".
+    const ctx = await getProductContext(prisma);
+    const scope =
+      query.product !== undefined ? resolveProductScope(query.product, ctx.products) : ctx.scope;
+    if (query.product !== undefined && query.product !== 'all' && scope.kind === 'all') {
+      throw new BadRequestError('Unknown product');
+    }
+
+    const summary = await loadFinanceSummary(prisma, { from, to }, {
+      scope,
+      companyLabel: `${ctx.companyShort} (company-level)`,
+    });
+    return NextResponse.json({
+      ...summary,
+      scope: scope.kind,
+      product: scope.kind === 'product' ? scope.product.slug : null,
+    });
   } catch (err) {
     return errorResponse(err);
   }

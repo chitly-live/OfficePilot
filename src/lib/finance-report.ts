@@ -21,6 +21,7 @@ import type {
   PrismaClient,
 } from '@prisma/client';
 
+import { productWhere, type ProductScope } from '@/lib/products';
 import {
   FINANCE_CATEGORY_META,
   computeAccountBalance,
@@ -132,6 +133,7 @@ export interface ReportSourceRow extends LedgerRow {
   partyName: string | null;
   viaPartyName: string | null;
   accountName: string | null;
+  productName?: string | null;
 }
 
 export interface ReportSourceAccount {
@@ -166,6 +168,8 @@ export interface ReportTransaction {
   /** Intermediary the bank paid, when the money was routed. */
   viaPartyName: string;
   accountName: string;
+  /** Product the row is tagged with; empty = company-level. */
+  productName: string;
 }
 
 export interface ReportAccount {
@@ -207,6 +211,8 @@ export interface ReportFinancing {
 export interface FinanceReport {
   company: ReportCompany;
   window: ReportWindow;
+  /** Product filter applied to the report; `null` = whole company. */
+  scopeLabel: string | null;
   generatedAt: Date;
   totals: FinanceTotals;
   financing: ReportFinancing;
@@ -232,6 +238,8 @@ export interface AssembleInput {
   accounts: readonly ReportSourceAccount[];
   parties: readonly ReportSourceParty[];
   now?: Date;
+  /** Product filter label shown in the header; omit / null = whole company. */
+  scopeLabel?: string | null;
 }
 
 function sumAmounts(rows: readonly LedgerRow[]): number {
@@ -350,12 +358,14 @@ export function assembleFinanceReport(input: AssembleInput): FinanceReport {
     reference: r.reference ?? '',
     partyName: r.partyName ?? '',
     viaPartyName: r.viaPartyName ?? '',
+    productName: r.productName ?? '',
     accountName: r.accountName ?? '',
   }));
 
   return {
     company: input.company,
     window,
+    scopeLabel: input.scopeLabel ?? null,
     generatedAt: input.now ?? new Date(),
     totals,
     financing,
@@ -390,10 +400,11 @@ export async function buildFinanceReport(
   db: PrismaClient,
   window: ReportWindow,
   now: Date = new Date(),
+  scope: ProductScope = { kind: 'all' },
 ): Promise<FinanceReport> {
   const [rows, accounts, parties, settings] = await Promise.all([
     db.financeTransaction.findMany({
-      where: { date: { lte: window.to } },
+      where: { date: { lte: window.to }, ...productWhere(scope) },
       orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
       select: {
         id: true,
@@ -410,6 +421,7 @@ export async function buildFinanceReport(
         party: { select: { name: true } },
         viaParty: { select: { name: true } },
         account: { select: { name: true, ownerPartyId: true } },
+        product: { select: { name: true } },
       },
     }),
     db.financeAccount.findMany({
@@ -434,10 +446,17 @@ export async function buildFinanceReport(
     }),
   ]);
 
+  const company = companyFromSettings(settings);
   return assembleFinanceReport({
-    company: companyFromSettings(settings),
+    company,
     window,
     now,
+    scopeLabel:
+      scope.kind === 'all'
+        ? null
+        : scope.kind === 'company'
+          ? `${company.name} — company-level only (no product)`
+          : scope.product.name,
     rows: rows.map((r) => ({
       id: r.id,
       date: r.date,
@@ -454,6 +473,7 @@ export async function buildFinanceReport(
       partyName: r.party?.name ?? null,
       viaPartyName: r.viaParty?.name ?? null,
       accountName: r.account?.name ?? null,
+      productName: r.product?.name ?? null,
     })),
     accounts: accounts.map((a) => ({
       id: a.id,
@@ -475,5 +495,12 @@ export function reportFileStem(report: FinanceReport): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
-  return `${slug || 'officepilot'}-finance-${report.window.fileTag}`;
+  const scopeTag = report.scopeLabel
+    ? `-${report.scopeLabel
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 24)}`
+    : '';
+  return `${slug || 'officepilot'}-finance${scopeTag}-${report.window.fileTag}`;
 }

@@ -30,8 +30,12 @@
 import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 
+import { ProductSwitcher } from '@/components/layout/product-switcher';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Topbar } from '@/components/layout/topbar';
+import { prisma } from '@/lib/db';
+import { scopeValue } from '@/lib/products';
+import { getProductContext } from '@/lib/products-server';
 import { auth } from '@/lib/auth';
 
 interface AppLayoutProps {
@@ -61,6 +65,8 @@ export default async function AppLayout({ children }: AppLayoutProps) {
     moduleAccess: session.moduleAccess ?? [],
   };
 
+  const productContext = await getProductContext(prisma);
+
   return (
     <div
       className="
@@ -85,7 +91,16 @@ export default async function AppLayout({ children }: AppLayoutProps) {
           without it, wide tables inside `children` push the grid track
           and break the layout. */}
       <div className="flex min-w-0 flex-col">
-        <Topbar user={userMenu} />
+        <Topbar
+          user={userMenu}
+          productSwitcher={
+            <ProductSwitcher
+              products={productContext.products}
+              current={scopeValue(productContext.scope)}
+              companyShort={productContext.companyShort}
+            />
+          }
+        />
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
     </div>

@@ -131,6 +131,25 @@ model User {
   financeParty        FinanceParty?        @relation("FinancePartyUser")
 }
 
+/// A product / business line under the company (e.g. Chitly, Arrows Go).
+/// Company-level things (employees, bank, cards, salary) are shared; ledger
+/// rows carry `productId` so income / expense can be sliced per product.
+/// `productId = null` on a row means "company-level".
+model Product {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  color     String? // hex accent for badges
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions FinanceTransaction[]
+
+  @@index([isActive, sortOrder])
+}
+
 /// One "forgot password" link. Only the SHA-256 of the emailed token is
 /// stored, so a database leak cannot be replayed. Single use, 30-minute
 /// expiry, newest link invalidates older ones (see src/lib/password-reset-service.ts).
@@ -537,6 +556,9 @@ model FinanceTransaction {
   /// ("we owe the card owner") is unaffected — that is driven by `partyId`.
   settlesAccountId String?
   settlesAccount   FinanceAccount? @relation("FinanceTransactionSettles", fields: [settlesAccountId], references: [id], onDelete: Restrict)
+  /// Which product this row belongs to; null = company-level (Praxxel).
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: Restrict)
 
   createdById String
   createdBy   User   @relation("FinanceTransactionCreator", fields: [createdById], references: [id])
@@ -551,4 +573,5 @@ model FinanceTransaction {
   @@index([viaPartyId])
   @@index([accountId])
   @@index([settlesAccountId])
+  @@index([productId])
 }

@@ -79,6 +79,7 @@ const formSchema = z
     viaPartyId: z.string(),
     accountId: z.string(),
     settlesAccountId: z.string(),
+    productId: z.string(),
     description: z
       .string()
       .trim()
@@ -131,6 +132,12 @@ export interface PartyOption {
   type: FinancePartyType;
 }
 
+export interface ProductFormOption {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
 export interface AccountOption {
   id: string;
   name: string;
@@ -144,6 +151,10 @@ export interface TransactionFormProps {
   transactionId?: string;
   parties: PartyOption[];
   accounts: AccountOption[];
+  /** Products (business lines) the row can be tagged with. */
+  products?: ProductFormOption[];
+  /** Label for the "no product" option, e.g. "Praxxel (company-level)". */
+  companyLabel?: string;
   /** Pre-filled values (edit mode, or `?direction=` style prefills). */
   initialValues?: Partial<FormValues>;
   /** Where to go after a successful save. */
@@ -160,6 +171,8 @@ export function TransactionForm({
   transactionId,
   parties,
   accounts,
+  products = [],
+  companyLabel = 'Company-level (no product)',
   initialValues,
   returnTo,
 }: TransactionFormProps) {
@@ -181,6 +194,7 @@ export function TransactionForm({
       viaPartyId: initialValues?.viaPartyId ?? NONE_VALUE,
       accountId: initialValues?.accountId ?? NONE_VALUE,
       settlesAccountId: initialValues?.settlesAccountId ?? NONE_VALUE,
+      productId: initialValues?.productId ?? NONE_VALUE,
       description: initialValues?.description ?? '',
       reference: initialValues?.reference ?? '',
       hasOriginal: initialValues?.hasOriginal ?? false,
@@ -229,6 +243,7 @@ export function TransactionForm({
       if (values.category === 'CARD_REPAYMENT' && values.settlesAccountId !== NONE_VALUE) {
         payload.settlesAccountId = values.settlesAccountId;
       }
+      if (values.productId !== NONE_VALUE) payload.productId = values.productId;
       if (values.hasOriginal) {
         payload.originalAmount = Number(values.originalAmount);
         payload.originalCurrency = values.originalCurrency.toUpperCase();
@@ -248,6 +263,7 @@ export function TransactionForm({
           : null;
       payload.accountId =
         values.accountId === NONE_VALUE ? null : values.accountId;
+      payload.productId = values.productId === NONE_VALUE ? null : values.productId;
       payload.originalAmount = values.hasOriginal
         ? Number(values.originalAmount)
         : null;
@@ -483,6 +499,49 @@ export function TransactionForm({
             )}
           />
         </div>
+
+        {products.length > 0 ? (
+          <FormField
+            control={form.control}
+            name="productId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Product</FormLabel>
+                <Select
+                  value={field.value}
+                  onValueChange={field.onChange}
+                  disabled={isSubmitting}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value={NONE_VALUE}>{companyLabel}</SelectItem>
+                    {products.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        <span className="inline-flex items-center gap-2">
+                          <span
+                            aria-hidden="true"
+                            className="inline-block h-2 w-2 rounded-full"
+                            style={{ backgroundColor: p.color ?? '#94a3b8' }}
+                          />
+                          {p.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormDescription>
+                  Which business line this belongs to. Salary, bank charges, CA fees and
+                  card repayments are usually company-level.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ) : null}
 
         <FormField
           control={form.control}

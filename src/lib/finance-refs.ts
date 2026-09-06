@@ -16,6 +16,7 @@ export interface ResolvedTransactionRefs {
   viaPartyName: string | null;
   accountName: string | null;
   settlesAccountName: string | null;
+  productName: string | null;
 }
 
 export async function resolveTransactionRefs(
@@ -25,8 +26,19 @@ export async function resolveTransactionRefs(
     viaPartyId?: string | null;
     accountId?: string | null;
     settlesAccountId?: string | null;
+    productId?: string | null;
   },
 ): Promise<ResolvedTransactionRefs> {
+  const product = refs.productId
+    ? await db.product.findUnique({
+        where: { id: refs.productId },
+        select: { id: true, name: true },
+      })
+    : null;
+  if (refs.productId && !product) {
+    throw new BadRequestError('Product not found');
+  }
+
   const [party, viaParty, account, settlesAccount] = await Promise.all([
     refs.partyId
       ? db.financeParty.findUnique({
@@ -75,6 +87,7 @@ export async function resolveTransactionRefs(
     viaPartyName: viaParty?.name ?? null,
     accountName: account?.name ?? null,
     settlesAccountName: settlesAccount?.name ?? null,
+    productName: product?.name ?? null,
   };
 }
 

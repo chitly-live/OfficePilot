@@ -92,6 +92,7 @@ const dbModulePromise = import('@/lib/db');
 const TABLES_TO_TRUNCATE = [
   'PasswordResetToken',
   'FinanceTransaction',
+  'Product',
   'FinanceAccount',
   'FinanceParty',
   'ActivityLog',
