@@ -8,6 +8,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatInr } from '@/lib/finance';
+import { loadCardOverview } from '@/lib/finance-cards';
 import { loadAccountBalances } from '@/lib/finance-summary';
 import {
   financeAccountProjection,
@@ -35,7 +36,7 @@ export default async function AccountsPage() {
     redirect('/dashboard');
   }
 
-  const [rows, balances, parties] = await Promise.all([
+  const [rows, balances, parties, cards] = await Promise.all([
     prisma.financeAccount.findMany({
       select: financeAccountProjection,
       orderBy: [{ isActive: 'desc' }, { name: 'asc' }, { id: 'asc' }],
@@ -47,19 +48,21 @@ export default async function AccountsPage() {
       orderBy: [{ name: 'asc' }],
       take: 500,
     }),
+    loadCardOverview(prisma),
   ]);
 
+  const cardById = new Map(cards.map((c) => [c.id, c]));
   const items: AccountRow[] = rows.map((a) => ({
     ...(a as unknown as FinanceAccountPublic),
     balance: balances.get(a.id) ?? a.openingBalance,
+    card: cardById.get(a.id) ?? null,
   }));
 
   const companyBalance = items
     .filter((a) => a.isActive && a.ownerPartyId === null)
     .reduce((sum, a) => sum + a.balance, 0);
-  const borrowedSpend = items
-    .filter((a) => a.ownerPartyId !== null)
-    .reduce((sum, a) => sum + Math.max(0, -a.balance), 0);
+  // Card outstanding = spend − refunds − repayments that settle each card.
+  const borrowedSpend = cards.reduce((sum, c) => sum + Math.max(0, c.position.outstanding), 0);
 
   return (
     <div className="space-y-6">
@@ -77,7 +80,7 @@ export default async function AccountsPage() {
           value={formatInr(companyBalance)}
         />
         <StatCard
-          label="On borrowed cards (net spend)"
+          label="Outstanding on credit cards"
           value={formatInr(borrowedSpend)}
           invertColor
         />

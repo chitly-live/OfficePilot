@@ -33,6 +33,8 @@ import {
   shiftMonthKey,
   toMonthKey,
 } from '@/lib/finance';
+import { CARD_HEALTH_LABELS, type CardHealth } from '@/lib/credit-card';
+import { loadCardOverview } from '@/lib/finance-cards';
 import { loadSalaryBoard } from '@/lib/finance-employee';
 import { loadFinanceSummary } from '@/lib/finance-summary';
 import { SALARY_STATUS_LABELS, type SalaryStatus } from '@/lib/salary';
@@ -93,6 +95,14 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
 
   const summary = await loadFinanceSummary(prisma, range);
   const salaryBoard = await loadSalaryBoard(prisma, monthKey);
+  const cards = (await loadCardOverview(prisma)).filter((c) => c.isActive);
+  const cardTone: Record<CardHealth, 'green' | 'amber' | 'red' | 'neutral'> = {
+    OK: 'green',
+    HIGH: 'amber',
+    FULL: 'red',
+    OVER: 'red',
+    NO_LIMIT: 'neutral',
+  };
   const salaryTone: Record<SalaryStatus, 'green' | 'amber' | 'red' | 'neutral'> = {
     PAID: 'green',
     PARTIAL: 'amber',
@@ -262,6 +272,73 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Credit cards: outstanding vs limit, next bill */}
+      {cards.some((c) => c.position.outstanding !== 0 || c.creditLimit) ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Credit cards</CardTitle>
+            <CardDescription>
+              Outstanding on each borrowed card (spend minus the repayments that settle it),
+              how much limit is left, and when the next bill is due.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y">
+              {cards
+                .filter((c) => c.position.outstanding !== 0 || c.creditLimit)
+                .map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <Link href="/finance/accounts" className="font-medium hover:underline">
+                        {c.name}
+                      </Link>
+                      {c.cycle?.dueDate ? (
+                        <span
+                          className={cn(
+                            'ml-2 text-xs',
+                            c.daysToDue !== null && c.daysToDue <= 5
+                              ? 'font-medium text-status-red'
+                              : 'text-muted-foreground',
+                          )}
+                        >
+                          bill {formatDateUtc(c.cycle.statementDate)} · due{' '}
+                          {formatDateUtc(c.cycle.dueDate)}
+                          {c.daysToDue !== null
+                            ? c.daysToDue < 0
+                              ? ` (${-c.daysToDue}d overdue)`
+                              : ` (${c.daysToDue}d)`
+                            : ''}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="tabular-nums">
+                        <span className="font-semibold">{formatInr(c.position.outstanding)}</span>
+                        {c.creditLimit ? (
+                          <span className="text-muted-foreground"> / {formatInr(c.creditLimit)}</span>
+                        ) : null}
+                      </span>
+                      {c.position.available !== null ? (
+                        <span className="text-xs text-muted-foreground">
+                          {formatInr(c.position.available)} left
+                        </span>
+                      ) : null}
+                      <StatusBadge
+                        status={c.health}
+                        tone={cardTone[c.health]}
+                        label={CARD_HEALTH_LABELS[c.health]}
+                      />
+                    </div>
+                  </li>
+                ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Salaries for the selected month */}
       {salaryBoard.rows.length > 0 ? (

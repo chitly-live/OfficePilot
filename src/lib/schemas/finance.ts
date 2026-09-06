@@ -254,6 +254,8 @@ const transactionBase = {
   /** Intermediary the bank actually paid (money routed through them). */
   viaPartyId: idField.optional(),
   accountId: idField.optional(),
+  /** CARD_REPAYMENT only: which credit card's bill this payment settles. */
+  settlesAccountId: idField.optional(),
 };
 
 /**
@@ -304,6 +306,7 @@ export const financeTransactionUpdateSchema = z
     partyId: idField.nullable().optional(),
     viaPartyId: idField.nullable().optional(),
     accountId: idField.nullable().optional(),
+    settlesAccountId: idField.nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'At least one field must be provided',
@@ -408,6 +411,19 @@ export type FinancePartyListQuery = z.infer<typeof financePartyListQuerySchema>;
 // Accounts
 // ---------------------------------------------------------------------------
 
+/** Credit-card sanctioned limit, INR. */
+const creditLimitField = z.coerce
+  .number()
+  .min(0, 'Credit limit cannot be negative')
+  .max(MAX_AMOUNT, 'Credit limit is unrealistically large');
+
+/** Day of month for statement generation / payment due. */
+const dayOfMonthField = z.coerce
+  .number()
+  .int('Must be a whole day of the month')
+  .min(1, 'Day must be between 1 and 31')
+  .max(31, 'Day must be between 1 and 31');
+
 export const financeAccountCreateSchema = z.object({
   name: nameField,
   type: accountTypeField.default(FinanceAccountType.BANK),
@@ -415,6 +431,9 @@ export const financeAccountCreateSchema = z.object({
   openingBalance: signedAmountField.optional().default(0),
   notes: notesField.optional(),
   isActive: z.boolean().optional().default(true),
+  creditLimit: creditLimitField.optional(),
+  billingDay: dayOfMonthField.optional(),
+  dueDay: dayOfMonthField.optional(),
 });
 
 export type FinanceAccountCreateInput = z.infer<typeof financeAccountCreateSchema>;
@@ -427,6 +446,9 @@ export const financeAccountUpdateSchema = z
     openingBalance: signedAmountField.optional(),
     notes: notesField.nullable().optional(),
     isActive: z.boolean().optional(),
+    creditLimit: creditLimitField.nullable().optional(),
+    billingDay: dayOfMonthField.nullable().optional(),
+    dueDay: dayOfMonthField.nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'At least one field must be provided',
@@ -505,6 +527,9 @@ export const financeAccountProjection = {
   openingBalance: true,
   isActive: true,
   notes: true,
+  creditLimit: true,
+  billingDay: true,
+  dueDay: true,
   createdAt: true,
   updatedAt: true,
   ownerParty: {
@@ -520,6 +545,10 @@ export type FinanceAccountPublic = {
   openingBalance: number;
   isActive: boolean;
   notes: string | null;
+  /** Credit cards only. */
+  creditLimit: number | null;
+  billingDay: number | null;
+  dueDay: number | null;
   createdAt: Date;
   updatedAt: Date;
   ownerParty: { id: string; name: string; type: FinancePartyType } | null;
@@ -539,6 +568,7 @@ export const financeTransactionProjection = {
   partyId: true,
   viaPartyId: true,
   accountId: true,
+  settlesAccountId: true,
   createdById: true,
   createdAt: true,
   updatedAt: true,
@@ -547,6 +577,9 @@ export const financeTransactionProjection = {
   },
   viaParty: {
     select: { id: true, name: true, type: true },
+  },
+  settlesAccount: {
+    select: { id: true, name: true },
   },
   account: {
     select: { id: true, name: true, type: true, ownerPartyId: true },
@@ -570,11 +603,13 @@ export type FinanceTransactionPublic = {
   partyId: string | null;
   viaPartyId: string | null;
   accountId: string | null;
+  settlesAccountId: string | null;
   createdById: string;
   createdAt: Date;
   updatedAt: Date;
   party: { id: string; name: string; type: FinancePartyType } | null;
   viaParty: { id: string; name: string; type: FinancePartyType } | null;
+  settlesAccount: { id: string; name: string } | null;
   account: {
     id: string;
     name: string;

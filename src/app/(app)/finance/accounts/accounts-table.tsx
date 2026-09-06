@@ -17,14 +17,28 @@ import {
   type DataTableColumn,
 } from '@/components/shared/DataTable';
 import { StatusBadge } from '@/components/shared/StatusBadge';
-import { FINANCE_ACCOUNT_TYPE_LABELS, formatInr } from '@/lib/finance';
+import { CARD_HEALTH_LABELS, type CardHealth } from '@/lib/credit-card';
+import { FINANCE_ACCOUNT_TYPE_LABELS, formatDateUtc, formatInr } from '@/lib/finance';
+import type { CardOverview } from '@/lib/finance-cards';
 import type { FinanceAccountPublic } from '@/lib/schemas/finance';
 import { cn } from '@/lib/utils';
 
 import { requestJson } from '../finance-ui';
 import { AccountDialog, type AccountDialogPartyOption } from './account-dialog';
 
-export type AccountRow = FinanceAccountPublic & { balance: number };
+export type AccountRow = FinanceAccountPublic & {
+  balance: number;
+  /** Present for credit cards. */
+  card?: CardOverview | null;
+};
+
+const CARD_HEALTH_TONE: Record<CardHealth, 'green' | 'amber' | 'red' | 'neutral'> = {
+  OK: 'green',
+  HIGH: 'amber',
+  FULL: 'red',
+  OVER: 'red',
+  NO_LIMIT: 'neutral',
+};
 
 export interface AccountsTableProps {
   items: AccountRow[];
@@ -147,6 +161,59 @@ export function AccountsTable({ items, parties, emptyAction }: AccountsTableProp
         ),
       },
       {
+        id: 'card',
+        header: 'Card limit & bill',
+        cell: ({ row }) => {
+          const card = row.original.card;
+          if (!card) {
+            return <span className="text-sm text-muted-foreground">—</span>;
+          }
+          const { position, cycle } = card;
+          return (
+            <div className="min-w-0 space-y-1 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="tabular-nums">
+                  <span className="font-semibold">{formatInr(position.outstanding)}</span>
+                  {card.creditLimit ? (
+                    <span className="text-muted-foreground"> / {formatInr(card.creditLimit)}</span>
+                  ) : null}
+                </span>
+                <StatusBadge
+                  status={card.health}
+                  tone={CARD_HEALTH_TONE[card.health]}
+                  label={CARD_HEALTH_LABELS[card.health]}
+                />
+              </div>
+              {position.available !== null ? (
+                <div className="text-xs text-muted-foreground">
+                  Available {formatInr(position.available)}
+                </div>
+              ) : null}
+              {cycle ? (
+                <div className="text-xs text-muted-foreground">
+                  Cycle {formatDateUtc(cycle.from)} – {formatDateUtc(cycle.statementDate)} ·{' '}
+                  {formatInr(position.cycleSpend)} spent
+                  {cycle.dueDate ? (
+                    <>
+                      {' '}· due{' '}
+                      <span
+                        className={cn(
+                          card.daysToDue !== null && card.daysToDue <= 5
+                            ? 'font-medium text-status-red'
+                            : undefined,
+                        )}
+                      >
+                        {formatDateUtc(cycle.dueDate)}
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
         id: 'status',
         header: 'Status',
         cell: ({ row }) =>
@@ -176,6 +243,9 @@ export function AccountsTable({ items, parties, emptyAction }: AccountsTableProp
                 openingBalance: row.original.openingBalance,
                 notes: row.original.notes,
                 isActive: row.original.isActive,
+                creditLimit: row.original.creditLimit,
+                billingDay: row.original.billingDay,
+                dueDay: row.original.dueDay,
               }}
               parties={parties}
             />

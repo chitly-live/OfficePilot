@@ -83,6 +83,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       partyId: input.partyId,
       viaPartyId: input.viaPartyId,
       accountId: input.accountId,
+      settlesAccountId: input.settlesAccountId,
     });
 
     const created = await prisma.financeTransaction.create({
@@ -107,6 +108,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ...(input.partyId !== undefined ? { partyId: input.partyId } : {}),
         ...(input.viaPartyId !== undefined ? { viaPartyId: input.viaPartyId } : {}),
         ...(input.accountId !== undefined ? { accountId: input.accountId } : {}),
+        ...(input.settlesAccountId !== undefined
+          ? { settlesAccountId: input.settlesAccountId }
+          : {}),
         createdById: session.userId,
       },
       select: financeTransactionProjection,

@@ -87,6 +87,9 @@ export async function PATCH(
       data.notes = input.notes === '' ? null : input.notes;
     }
     if (input.isActive !== undefined) data.isActive = input.isActive;
+    if (input.creditLimit !== undefined) data.creditLimit = input.creditLimit;
+    if (input.billingDay !== undefined) data.billingDay = input.billingDay;
+    if (input.dueDay !== undefined) data.dueDay = input.dueDay;
 
     const updated = await prisma.financeAccount.update({
       where: { id },

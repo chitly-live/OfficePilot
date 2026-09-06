@@ -121,6 +121,7 @@ export async function PATCH(
       partyId: input.partyId ?? undefined,
       viaPartyId: input.viaPartyId ?? undefined,
       accountId: input.accountId ?? undefined,
+      settlesAccountId: input.settlesAccountId ?? undefined,
     });
 
     const data: Record<string, unknown> = {};
@@ -143,6 +144,7 @@ export async function PATCH(
     if (input.partyId !== undefined) data.partyId = input.partyId;
     if (input.viaPartyId !== undefined) data.viaPartyId = input.viaPartyId;
     if (input.accountId !== undefined) data.accountId = input.accountId;
+    if (input.settlesAccountId !== undefined) data.settlesAccountId = input.settlesAccountId;
 
     const updated = await prisma.financeTransaction.update({
       where: { id },

@@ -161,6 +161,7 @@ export default async function TransactionDetailPage({ params }: PageProps) {
               category: txn.category,
               partyId: txn.partyId ?? undefined,
               viaPartyId: txn.viaPartyId ?? undefined,
+              settlesAccountId: txn.settlesAccountId ?? undefined,
               accountId: txn.accountId ?? undefined,
               description: txn.description ?? '',
               reference: txn.reference ?? '',

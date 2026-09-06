@@ -78,6 +78,7 @@ const formSchema = z
     partyId: z.string(),
     viaPartyId: z.string(),
     accountId: z.string(),
+    settlesAccountId: z.string(),
     description: z
       .string()
       .trim()
@@ -179,6 +180,7 @@ export function TransactionForm({
       partyId: initialValues?.partyId ?? NONE_VALUE,
       viaPartyId: initialValues?.viaPartyId ?? NONE_VALUE,
       accountId: initialValues?.accountId ?? NONE_VALUE,
+      settlesAccountId: initialValues?.settlesAccountId ?? NONE_VALUE,
       description: initialValues?.description ?? '',
       reference: initialValues?.reference ?? '',
       hasOriginal: initialValues?.hasOriginal ?? false,
@@ -224,6 +226,9 @@ export function TransactionForm({
       if (values.partyId !== NONE_VALUE) payload.partyId = values.partyId;
       if (values.viaPartyId !== NONE_VALUE) payload.viaPartyId = values.viaPartyId;
       if (values.accountId !== NONE_VALUE) payload.accountId = values.accountId;
+      if (values.category === 'CARD_REPAYMENT' && values.settlesAccountId !== NONE_VALUE) {
+        payload.settlesAccountId = values.settlesAccountId;
+      }
       if (values.hasOriginal) {
         payload.originalAmount = Number(values.originalAmount);
         payload.originalCurrency = values.originalCurrency.toUpperCase();
@@ -237,6 +242,10 @@ export function TransactionForm({
       payload.partyId = values.partyId === NONE_VALUE ? null : values.partyId;
       payload.viaPartyId =
         values.viaPartyId === NONE_VALUE ? null : values.viaPartyId;
+      payload.settlesAccountId =
+        values.category === 'CARD_REPAYMENT' && values.settlesAccountId !== NONE_VALUE
+          ? values.settlesAccountId
+          : null;
       payload.accountId =
         values.accountId === NONE_VALUE ? null : values.accountId;
       payload.originalAmount = values.hasOriginal
@@ -514,6 +523,52 @@ export function TransactionForm({
             </FormItem>
           )}
         />
+
+        {category === 'CARD_REPAYMENT' ? (
+          <FormField
+            control={form.control}
+            name="settlesAccountId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  Which card does this settle?{' '}
+                  <span className="text-muted-foreground">(optional)</span>
+                </FormLabel>
+                <Select
+                  value={field.value}
+                  onValueChange={field.onChange}
+                  disabled={isSubmitting}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value={NONE_VALUE}>— Not tracked per card —</SelectItem>
+                    {accounts
+                      .filter((a) => a.type === 'CREDIT_CARD')
+                      .map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}
+                          {a.ownerName ? (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              · {a.ownerName}
+                            </span>
+                          ) : null}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <FormDescription>
+                  Frees up that card&apos;s limit. What we owe the card owner is
+                  reduced either way.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ) : null}
 
         <FormField
           control={form.control}

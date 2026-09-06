@@ -82,6 +82,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           ? { notes: input.notes }
           : {}),
         isActive: input.isActive,
+        ...(input.creditLimit !== undefined ? { creditLimit: input.creditLimit } : {}),
+        ...(input.billingDay !== undefined ? { billingDay: input.billingDay } : {}),
+        ...(input.dueDay !== undefined ? { dueDay: input.dueDay } : {}),
       },
       select: financeAccountProjection,
     });

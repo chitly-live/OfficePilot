@@ -60,6 +60,18 @@ const formSchema = z.object({
     .string()
     .trim()
     .refine((v) => v === '' || Number.isFinite(Number(v)), 'Enter a number'),
+  creditLimit: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || (Number.isFinite(Number(v)) && Number(v) >= 0), 'Enter a number'),
+  billingDay: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || /^([1-9]|[12]\d|3[01])$/.test(v), 'Day 1–31'),
+  dueDay: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || /^([1-9]|[12]\d|3[01])$/.test(v), 'Day 1–31'),
   notes: z.string().trim().max(2000),
   isActive: z.boolean(),
 });
@@ -74,6 +86,9 @@ export interface AccountDialogAccount {
   openingBalance: number;
   notes: string | null;
   isActive: boolean;
+  creditLimit: number | null;
+  billingDay: number | null;
+  dueDay: number | null;
 }
 
 export interface AccountDialogPartyOption {
@@ -100,6 +115,9 @@ export function AccountDialog({ mode, account, parties, trigger }: AccountDialog
       ownerPartyId: account?.ownerPartyId ?? NONE_VALUE,
       openingBalance:
         account && account.openingBalance !== 0 ? String(account.openingBalance) : '',
+      creditLimit: account?.creditLimit != null ? String(account.creditLimit) : '',
+      billingDay: account?.billingDay != null ? String(account.billingDay) : '',
+      dueDay: account?.dueDay != null ? String(account.dueDay) : '',
       notes: account?.notes ?? '',
       isActive: account?.isActive ?? true,
     }),
@@ -121,12 +139,24 @@ export function AccountDialog({ mode, account, parties, trigger }: AccountDialog
 
   async function onSubmit(values: FormValues) {
     const opening = values.openingBalance === '' ? 0 : Number(values.openingBalance);
+    // Card fields only make sense on credit cards; clear them otherwise.
+    const isCard = values.type === 'CREDIT_CARD';
+    const cardValues = {
+      creditLimit: isCard && values.creditLimit !== '' ? Number(values.creditLimit) : null,
+      billingDay: isCard && values.billingDay !== '' ? Number(values.billingDay) : null,
+      dueDay: isCard && values.dueDay !== '' ? Number(values.dueDay) : null,
+    };
+    const card =
+      mode === 'create'
+        ? Object.fromEntries(Object.entries(cardValues).filter(([, v]) => v !== null))
+        : cardValues;
     const payload: Record<string, unknown> =
       mode === 'create'
         ? {
             name: values.name,
             type: values.type,
             openingBalance: opening,
+            ...card,
             ...(values.ownerPartyId !== NONE_VALUE
               ? { ownerPartyId: values.ownerPartyId }
               : {}),
@@ -136,6 +166,7 @@ export function AccountDialog({ mode, account, parties, trigger }: AccountDialog
             name: values.name,
             type: values.type,
             openingBalance: opening,
+            ...card,
             ownerPartyId: values.ownerPartyId === NONE_VALUE ? null : values.ownerPartyId,
             notes: values.notes === '' ? null : values.notes,
             isActive: values.isActive,
@@ -303,6 +334,76 @@ export function AccountDialog({ mode, account, parties, trigger }: AccountDialog
                 </FormItem>
               )}
             />
+
+            {type === 'CREDIT_CARD' ? (
+              <div className="grid gap-4 rounded-md border bg-muted/20 p-3 sm:grid-cols-3">
+                <FormField
+                  control={form.control}
+                  name="creditLimit"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Credit limit (₹)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          step="any"
+                          placeholder="60000"
+                          disabled={isSubmitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="billingDay"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Statement day</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={31}
+                          placeholder="13"
+                          disabled={isSubmitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>Bill generates on this day.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="dueDay"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Due day</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={31}
+                          placeholder="1"
+                          disabled={isSubmitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>First such day after the statement.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            ) : null}
 
             <FormField
               control={form.control}

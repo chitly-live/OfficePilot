@@ -491,10 +491,18 @@ model FinanceAccount {
   isActive       Boolean            @default(true)
   notes          String?
 
+  /// Credit cards only: sanctioned limit, statement generation day (1–31)
+  /// and payment due day (1–31, first occurrence after the statement).
+  creditLimit Float?
+  billingDay  Int?
+  dueDay      Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  transactions FinanceTransaction[]
+  transactions FinanceTransaction[] @relation("FinanceTransactionAccount")
+  /// Card repayments that settle this card's bill (`settlesAccountId`).
+  settlements  FinanceTransaction[] @relation("FinanceTransactionSettles")
 
   @@index([type])
   @@index([ownerPartyId])
@@ -523,7 +531,12 @@ model FinanceTransaction {
   viaPartyId String?
   viaParty   FinanceParty?  @relation("FinanceTransactionVia", fields: [viaPartyId], references: [id], onDelete: Restrict)
   accountId String?
-  account   FinanceAccount? @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  account   FinanceAccount? @relation("FinanceTransactionAccount", fields: [accountId], references: [id], onDelete: Restrict)
+  /// For CARD_REPAYMENT rows: which credit card's bill this payment settles.
+  /// Reduces that card's outstanding / frees its limit. The party balance
+  /// ("we owe the card owner") is unaffected — that is driven by `partyId`.
+  settlesAccountId String?
+  settlesAccount   FinanceAccount? @relation("FinanceTransactionSettles", fields: [settlesAccountId], references: [id], onDelete: Restrict)
 
   createdById String
   createdBy   User   @relation("FinanceTransactionCreator", fields: [createdById], references: [id])
@@ -537,4 +550,5 @@ model FinanceTransaction {
   @@index([partyId])
   @@index([viaPartyId])
   @@index([accountId])
+  @@index([settlesAccountId])
 }

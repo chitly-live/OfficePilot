@@ -142,10 +142,18 @@ export function TransactionsTable({
           header: 'Account',
           cell: ({ row }) => {
             const a = row.original.account;
+            const settles = row.original.settlesAccount;
             return (
-              <span className="text-sm text-muted-foreground">
-                {a ? a.name : '—'}
-              </span>
+              <div className="min-w-0">
+                <span className="block truncate text-sm text-muted-foreground">
+                  {a ? a.name : '—'}
+                </span>
+                {settles ? (
+                  <span className="block truncate text-[11px] text-status-blue">
+                    settles {settles.name}
+                  </span>
+                ) : null}
+              </div>
             );
           },
         },
