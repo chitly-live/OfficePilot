@@ -73,6 +73,7 @@ export async function PATCH(
         originalAmount: true,
         originalCurrency: true,
         partyId: true,
+        viaPartyId: true,
         accountId: true,
         description: true,
       },
@@ -103,9 +104,22 @@ export async function PATCH(
       );
     }
 
+    // The intermediary can never be the counterparty itself — check the
+    // merged row, since either side may be changing in this request.
+    const nextPartyId =
+      input.partyId !== undefined ? input.partyId : existing.partyId;
+    const nextViaPartyId =
+      input.viaPartyId !== undefined ? input.viaPartyId : existing.viaPartyId;
+    if (nextPartyId && nextViaPartyId && nextPartyId === nextViaPartyId) {
+      throw new BadRequestError(
+        'Routed-via party must be different from the party',
+      );
+    }
+
     // Validate any (non-null) reference the client is setting.
     const refs = await resolveTransactionRefs(prisma, {
       partyId: input.partyId ?? undefined,
+      viaPartyId: input.viaPartyId ?? undefined,
       accountId: input.accountId ?? undefined,
     });
 
@@ -127,6 +141,7 @@ export async function PATCH(
     }
     if (input.dueDate !== undefined) data.dueDate = input.dueDate;
     if (input.partyId !== undefined) data.partyId = input.partyId;
+    if (input.viaPartyId !== undefined) data.viaPartyId = input.viaPartyId;
     if (input.accountId !== undefined) data.accountId = input.accountId;
 
     const updated = await prisma.financeTransaction.update({

@@ -396,6 +396,9 @@ enum FinancePartyType {
   WORKER
   VENDOR
   CLIENT
+  /// Someone money merely passes through (e.g. a friend whose bank account
+  /// forwards a payment). Used with `FinanceTransaction.viaPartyId`.
+  INTERMEDIARY
   OTHER
 }
 
@@ -453,7 +456,10 @@ model FinanceParty {
   updatedAt DateTime @updatedAt
 
   accounts     FinanceAccount[]
-  transactions FinanceTransaction[]
+  transactions FinanceTransaction[] @relation("FinanceTransactionParty")
+  /// Transactions where this party was only the intermediary the bank paid
+  /// (money passed through them to the real `party`). Not part of balances.
+  routedTransactions FinanceTransaction[] @relation("FinanceTransactionVia")
 
   @@index([type])
   @@index([name])
@@ -493,8 +499,15 @@ model FinanceTransaction {
   reference        String? // UTR / txn id / invoice no
   dueDate          DateTime? // e.g. when a loan is due back
 
+  /// The real counterparty — who the money is ultimately for / from. Drives
+  /// every balance ("we owe", paid to, received from).
   partyId   String?
-  party     FinanceParty?   @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  party     FinanceParty?   @relation("FinanceTransactionParty", fields: [partyId], references: [id], onDelete: Restrict)
+  /// Optional intermediary the bank actually paid, when money was routed
+  /// (e.g. bank → Ritu → Shubham). Matches the bank narration; never
+  /// affects balances.
+  viaPartyId String?
+  viaParty   FinanceParty?  @relation("FinanceTransactionVia", fields: [viaPartyId], references: [id], onDelete: Restrict)
   accountId String?
   account   FinanceAccount? @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
@@ -508,5 +521,6 @@ model FinanceTransaction {
   @@index([direction])
   @@index([category])
   @@index([partyId])
+  @@index([viaPartyId])
   @@index([accountId])
 }

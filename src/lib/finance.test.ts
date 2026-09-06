@@ -25,6 +25,7 @@ import {
   categoryLabel,
   computeAccountBalance,
   computePartyBalance,
+  computePassThrough,
   formatDateUtc,
   formatInr,
   groupByCategory,
@@ -110,7 +111,7 @@ describe('FINANCE_CATEGORY_META', () => {
   });
 
   it('party / account type lists are complete', () => {
-    expect(ALL_FINANCE_PARTY_TYPES).toHaveLength(6);
+    expect(ALL_FINANCE_PARTY_TYPES).toHaveLength(7);
     expect(ALL_FINANCE_ACCOUNT_TYPES).toHaveLength(6);
   });
 });
@@ -381,6 +382,39 @@ describe('computePartyBalance', () => {
         }
       }),
     );
+  });
+});
+
+describe('computePassThrough', () => {
+  const RITU = 'party-ritu';
+  const rows = [
+    // Bank paid Ritu, but the money was for Shubham's card → party = Shubham, via = Ritu.
+    row({ direction: 'OUT', category: 'CARD_REPAYMENT', amount: 20000, partyId: CARD_OWNER, viaPartyId: RITU }),
+    row({ direction: 'OUT', category: 'CARD_REPAYMENT', amount: 21500, partyId: CARD_OWNER, viaPartyId: RITU }),
+    // Something Ritu was actually paid for herself.
+    row({ direction: 'OUT', category: 'OTHER_EXPENSE', amount: 500, partyId: RITU }),
+    // Money that came in through her.
+    row({ direction: 'IN', category: 'OTHER_INCOME', amount: 100, partyId: FINANCER, viaPartyId: RITU }),
+  ];
+
+  it('sums only rows where the party is the intermediary', () => {
+    expect(computePassThrough(rows, RITU)).toEqual({ routedOut: 41500, routedIn: 100, count: 3 });
+  });
+
+  it('does not touch the intermediary’s own balance', () => {
+    const b = computePartyBalance(rows, RITU);
+    expect(b.paidTo).toBe(500);
+    expect(b.owed).toBe(0);
+  });
+
+  it('credits the real party as if paid directly', () => {
+    const b = computePartyBalance(rows, CARD_OWNER);
+    expect(b.cardRepaid).toBe(41500);
+    expect(b.paidTo).toBe(41500);
+  });
+
+  it('is zero for a party nothing was routed through', () => {
+    expect(computePassThrough(rows, HOST)).toEqual({ routedOut: 0, routedIn: 0, count: 0 });
   });
 });
 

@@ -1,13 +1,10 @@
 /**
- * Finance module — reference validation shared by the transaction and
- * account route handlers.
+ * Reference validation for Finance writes.
  *
- * A transaction may point at a `FinanceParty` and a `FinanceAccount`; an
- * account may point at an owner party. Prisma would surface a dangling id
- * as a P2003 foreign-key error (→ 500), which is the wrong status for a
- * client typo. These helpers turn a missing reference into a
- * {@link BadRequestError} (→ 400) with a readable message and hand back
- * the display names so the caller can enrich the activity log.
+ * A transaction may point at a `FinanceParty` (the real counterparty), an
+ * optional `viaParty` (intermediary the bank paid when money was routed)
+ * and a `FinanceAccount`. Each is looked up once; a dangling id becomes a
+ * 400 rather than a Prisma foreign-key error.
  */
 
 import { BadRequestError } from '@/lib/api-helpers';
@@ -15,21 +12,28 @@ import type { FinanceDbClient } from '@/lib/finance-summary';
 
 export interface ResolvedTransactionRefs {
   partyName: string | null;
+  viaPartyName: string | null;
   accountName: string | null;
 }
 
-/**
- * Ensure the party / account ids exist. `undefined` and `null` are both
- * "no reference" and skip the lookup.
- */
 export async function resolveTransactionRefs(
   db: FinanceDbClient,
-  refs: { partyId?: string | null; accountId?: string | null },
+  refs: {
+    partyId?: string | null;
+    viaPartyId?: string | null;
+    accountId?: string | null;
+  },
 ): Promise<ResolvedTransactionRefs> {
-  const [party, account] = await Promise.all([
+  const [party, viaParty, account] = await Promise.all([
     refs.partyId
       ? db.financeParty.findUnique({
           where: { id: refs.partyId },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve(null),
+    refs.viaPartyId
+      ? db.financeParty.findUnique({
+          where: { id: refs.viaPartyId },
           select: { id: true, name: true },
         })
       : Promise.resolve(null),
@@ -44,17 +48,20 @@ export async function resolveTransactionRefs(
   if (refs.partyId && !party) {
     throw new BadRequestError('Party not found');
   }
+  if (refs.viaPartyId && !viaParty) {
+    throw new BadRequestError('Routed-via party not found');
+  }
   if (refs.accountId && !account) {
     throw new BadRequestError('Account not found');
   }
 
   return {
     partyName: party?.name ?? null,
+    viaPartyName: viaParty?.name ?? null,
     accountName: account?.name ?? null,
   };
 }
 
-/** Ensure an account's owner party exists (when one is given). */
 export async function resolveOwnerParty(
   db: FinanceDbClient,
   ownerPartyId: string | null | undefined,

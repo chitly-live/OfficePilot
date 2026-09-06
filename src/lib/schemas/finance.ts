@@ -251,6 +251,8 @@ const transactionBase = {
   reference: referenceField.optional(),
   dueDate: dateField.optional(),
   partyId: idField.optional(),
+  /** Intermediary the bank actually paid (money routed through them). */
+  viaPartyId: idField.optional(),
   accountId: idField.optional(),
 };
 
@@ -273,7 +275,11 @@ export const financeTransactionCreateSchema = z
       message: 'Original amount and currency must be given together',
       path: ['originalAmount'],
     },
-  );
+  )
+  .refine((v) => !v.viaPartyId || v.viaPartyId !== v.partyId, {
+    message: 'Routed-via party must be different from the party',
+    path: ['viaPartyId'],
+  });
 
 export type FinanceTransactionCreateInput = z.infer<
   typeof financeTransactionCreateSchema
@@ -296,11 +302,20 @@ export const financeTransactionUpdateSchema = z
     reference: referenceField.nullable().optional(),
     dueDate: dateField.nullable().optional(),
     partyId: idField.nullable().optional(),
+    viaPartyId: idField.nullable().optional(),
     accountId: idField.nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'At least one field must be provided',
-  });
+  })
+  .refine(
+    (value) =>
+      !value.viaPartyId || !value.partyId || value.viaPartyId !== value.partyId,
+    {
+      message: 'Routed-via party must be different from the party',
+      path: ['viaPartyId'],
+    },
+  );
 
 export type FinanceTransactionUpdateInput = z.infer<
   typeof financeTransactionUpdateSchema
@@ -519,11 +534,15 @@ export const financeTransactionProjection = {
   reference: true,
   dueDate: true,
   partyId: true,
+  viaPartyId: true,
   accountId: true,
   createdById: true,
   createdAt: true,
   updatedAt: true,
   party: {
+    select: { id: true, name: true, type: true },
+  },
+  viaParty: {
     select: { id: true, name: true, type: true },
   },
   account: {
@@ -546,11 +565,13 @@ export type FinanceTransactionPublic = {
   reference: string | null;
   dueDate: Date | null;
   partyId: string | null;
+  viaPartyId: string | null;
   accountId: string | null;
   createdById: string;
   createdAt: Date;
   updatedAt: Date;
   party: { id: string; name: string; type: FinancePartyType } | null;
+  viaParty: { id: string; name: string; type: FinancePartyType } | null;
   account: {
     id: string;
     name: string;

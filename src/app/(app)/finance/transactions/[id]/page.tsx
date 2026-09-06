@@ -90,7 +90,7 @@ export default async function TransactionDetailPage({ params }: PageProps) {
   // Active options, plus whatever this row already points at (even if
   // it has since been marked inactive) so the select never loses it.
   const parties = partyRows
-    .filter((p) => p.isActive || p.id === txn.partyId)
+    .filter((p) => p.isActive || p.id === txn.partyId || p.id === txn.viaPartyId)
     .map((p) => ({ id: p.id, name: p.name, type: p.type }));
   const accounts = accountRows
     .filter((a) => a.isActive || a.id === txn.accountId)
@@ -160,6 +160,7 @@ export default async function TransactionDetailPage({ params }: PageProps) {
               amount: String(txn.amount),
               category: txn.category,
               partyId: txn.partyId ?? undefined,
+              viaPartyId: txn.viaPartyId ?? undefined,
               accountId: txn.accountId ?? undefined,
               description: txn.description ?? '',
               reference: txn.reference ?? '',

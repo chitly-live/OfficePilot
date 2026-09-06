@@ -1,7 +1,14 @@
 /**
- * Finance module — Prisma `where` / `orderBy` builders for the ledger
- * list, shared by `GET /api/finance/transactions` and the
- * `/finance/transactions` page so both surfaces filter identically.
+ * Prisma `where` / `orderBy` builders for the transaction list. Shared by
+ * `GET /api/finance/transactions` and the `/finance/transactions` page so
+ * the API and the UI can never drift on filter semantics.
+ *
+ *   • `partyId` matches rows where the party is the counterparty OR the
+ *     intermediary the money was routed through (`viaPartyId`), so a
+ *     party's page shows everything that touched them.
+ *   • `month` is a shortcut for a UTC month range; explicit
+ *     `dateFrom` / `dateTo` win when both are present.
+ *   • `search` looks at description, reference, party and via-party names.
  */
 
 import type { Prisma } from '@prisma/client';
@@ -9,21 +16,19 @@ import type { Prisma } from '@prisma/client';
 import { monthRange } from '@/lib/finance';
 import type { FinanceTransactionListQuery } from '@/lib/schemas/finance';
 
-/**
- * Translate a parsed list query into a Prisma `where`. `month` is a
- * shortcut for one UTC month; explicit `dateFrom` / `dateTo` win when
- * present.
- */
 export function buildTransactionWhere(
   query: FinanceTransactionListQuery,
 ): Prisma.FinanceTransactionWhereInput {
   const where: Prisma.FinanceTransactionWhereInput = {};
+  const and: Prisma.FinanceTransactionWhereInput[] = [];
 
   if (query.direction !== undefined) where.direction = query.direction;
   if (query.category && query.category.length > 0) {
     where.category = { in: query.category };
   }
-  if (query.partyId !== undefined) where.partyId = query.partyId;
+  if (query.partyId !== undefined) {
+    and.push({ OR: [{ partyId: query.partyId }, { viaPartyId: query.partyId }] });
+  }
   if (query.accountId !== undefined) where.accountId = query.accountId;
 
   let from = query.dateFrom;
@@ -43,17 +48,20 @@ export function buildTransactionWhere(
   }
 
   if (query.search) {
-    where.OR = [
-      { description: { contains: query.search, mode: 'insensitive' } },
-      { reference: { contains: query.search, mode: 'insensitive' } },
-      { party: { name: { contains: query.search, mode: 'insensitive' } } },
-    ];
+    and.push({
+      OR: [
+        { description: { contains: query.search, mode: 'insensitive' } },
+        { reference: { contains: query.search, mode: 'insensitive' } },
+        { party: { name: { contains: query.search, mode: 'insensitive' } } },
+        { viaParty: { name: { contains: query.search, mode: 'insensitive' } } },
+      ],
+    });
   }
 
+  if (and.length > 0) where.AND = and;
   return where;
 }
 
-/** Stable ordering for the ledger list. */
 export function buildTransactionOrderBy(
   query: Pick<FinanceTransactionListQuery, 'sortBy' | 'sortDir'>,
 ): Prisma.FinanceTransactionOrderByWithRelationInput[] {

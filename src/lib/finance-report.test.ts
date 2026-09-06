@@ -58,6 +58,7 @@ function row(
     accountId: null,
     accountOwnerPartyId: null,
     partyName: null,
+    viaPartyName: null,
     accountName: null,
     ...extra,
   };

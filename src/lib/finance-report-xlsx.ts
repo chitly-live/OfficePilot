@@ -259,6 +259,7 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
     { width: 22 }, // Category
     { width: 44 }, // Description
     { width: 28 }, // Party
+    { width: 22 }, // Via
     { width: 30 }, // Account
     { width: 24 }, // Reference
     { width: 16 }, // Money in
@@ -266,7 +267,7 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
     { width: 14 }, // Original amount
     { width: 9 },  // Currency
   ];
-  companyHeader(ws, report, 'Transactions', 11);
+  companyHeader(ws, report, 'Transactions', 12);
   ws.addRow([]);
 
   const headers = [
@@ -275,6 +276,7 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
     'Category',
     'Description',
     'Party',
+    'Routed via',
     'Account',
     'Reference',
     'Money in',
@@ -284,7 +286,7 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
   ];
   const head = ws.addRow(headers);
   styleHeaderRow(head, headers.length);
-  for (const c of [8, 9, 10]) head.getCell(c).alignment = { horizontal: 'right' };
+  for (const c of [9, 10, 11]) head.getCell(c).alignment = { horizontal: 'right' };
   const firstDataRow = head.number + 1;
 
   report.transactions.forEach((t, i) => {
@@ -294,6 +296,7 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
       t.kind === 'FINANCING' ? `${t.categoryLabel} (not P&L)` : t.categoryLabel,
       t.description,
       t.partyName,
+      t.viaPartyName,
       t.accountName,
       t.reference,
       t.direction === 'IN' ? t.amount : null,
@@ -309,10 +312,13 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
       bold: true,
       color: { argb: t.direction === 'IN' ? GREEN : RED },
     };
-    money(row.getCell(8));
+    if (t.viaPartyName) {
+      row.getCell(6).font = { size: 10, italic: true, color: { argb: MUTED } };
+    }
     money(row.getCell(9));
-    row.getCell(10).numFmt = '#,##0.00';
-    row.getCell(10).alignment = { horizontal: 'right' };
+    money(row.getCell(10));
+    row.getCell(11).numFmt = '#,##0.00';
+    row.getCell(11).alignment = { horizontal: 'right' };
   });
 
   const lastDataRow = ws.rowCount;
@@ -334,18 +340,19 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
     '',
     '',
     '',
+    '',
     report.transactions.length > 0
-      ? { formula: `SUM(H${firstDataRow}:H${lastDataRow})`, result: Math.round(totalIn * 100) / 100 }
+      ? { formula: `SUM(I${firstDataRow}:I${lastDataRow})`, result: Math.round(totalIn * 100) / 100 }
       : 0,
     report.transactions.length > 0
-      ? { formula: `SUM(I${firstDataRow}:I${lastDataRow})`, result: Math.round(totalOut * 100) / 100 }
+      ? { formula: `SUM(J${firstDataRow}:J${lastDataRow})`, result: Math.round(totalOut * 100) / 100 }
       : 0,
     '',
     '',
   ]);
   styleTotalRow(totals, headers.length);
-  money(totals.getCell(8));
   money(totals.getCell(9));
+  money(totals.getCell(10));
 
   ws.autoFilter = {
     from: { row: head.number, column: 1 },

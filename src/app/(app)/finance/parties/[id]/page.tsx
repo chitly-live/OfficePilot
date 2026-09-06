@@ -14,6 +14,7 @@ import {
   FINANCE_ACCOUNT_TYPE_LABELS,
   FINANCE_PARTY_TYPE_LABELS,
   FINANCE_PARTY_TYPE_SHORT,
+  computePassThrough,
   formatInr,
 } from '@/lib/finance';
 import { loadPartyBalance } from '@/lib/finance-summary';
@@ -67,14 +68,18 @@ export default async function PartyDetailPage({ params }: PageProps) {
     redirect('/dashboard');
   }
 
-  const [partyRow, ledgerRows, accounts] = await Promise.all([
+  const [partyRow, ledgerRows, accounts, routedRows] = await Promise.all([
     prisma.financeParty.findUnique({
       where: { id: params.id },
       select: financePartyProjection,
     }),
     prisma.financeTransaction.findMany({
       where: {
-        OR: [{ partyId: params.id }, { account: { ownerPartyId: params.id } }],
+        OR: [
+          { partyId: params.id },
+          { viaPartyId: params.id },
+          { account: { ownerPartyId: params.id } },
+        ],
       },
       select: financeTransactionProjection,
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
@@ -85,11 +90,17 @@ export default async function PartyDetailPage({ params }: PageProps) {
       select: { id: true, name: true, type: true, isActive: true },
       orderBy: [{ name: 'asc' }],
     }),
+    // Money that only passed through this party on its way to someone else.
+    prisma.financeTransaction.findMany({
+      where: { viaPartyId: params.id },
+      select: { direction: true, category: true, amount: true, viaPartyId: true },
+    }),
   ]);
   if (!partyRow) notFound();
 
   const party = partyRow as unknown as FinancePartyPublic;
   const balance = await loadPartyBalance(prisma, party.id);
+  const passThrough = computePassThrough(routedRows, party.id);
   const ledger = ledgerRows as unknown as FinanceTransactionPublic[];
 
   const isLender = party.type === 'FINANCER' || party.type === 'CARD_OWNER';
@@ -244,6 +255,38 @@ export default async function PartyDetailPage({ params }: PageProps) {
         </div>
 
         <aside className="space-y-4">
+          {passThrough.count > 0 ? (
+            <Card className="border-status-amber/40">
+              <CardHeader>
+                <CardTitle className="text-base">Money routed through {party.name}</CardTitle>
+                <CardDescription>
+                  The bank paid {party.name}, who passed it on to the real party.
+                  These amounts are shown for tracking only and are{' '}
+                  <span className="font-medium text-foreground">not</span> counted as
+                  paid to or owed by {party.name}.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-1 text-sm">
+                {passThrough.routedOut > 0 ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Routed out through them</span>
+                    <span className="font-semibold tabular-nums">{formatInr(passThrough.routedOut)}</span>
+                  </div>
+                ) : null}
+                {passThrough.routedIn > 0 ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Routed in through them</span>
+                    <span className="font-semibold tabular-nums">{formatInr(passThrough.routedIn)}</span>
+                  </div>
+                ) : null}
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Entries</span>
+                  <span>{passThrough.count}</span>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Contact</CardTitle>

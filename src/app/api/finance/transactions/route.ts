@@ -81,6 +81,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const refs = await resolveTransactionRefs(prisma, {
       partyId: input.partyId,
+      viaPartyId: input.viaPartyId,
       accountId: input.accountId,
     });
 
@@ -104,6 +105,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           : {}),
         ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
         ...(input.partyId !== undefined ? { partyId: input.partyId } : {}),
+        ...(input.viaPartyId !== undefined ? { viaPartyId: input.viaPartyId } : {}),
         ...(input.accountId !== undefined ? { accountId: input.accountId } : {}),
         createdById: session.userId,
       },
@@ -122,6 +124,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           category: created.category,
           categoryLabel: categoryLabel(created.category),
           ...(refs.partyName ? { partyName: refs.partyName } : {}),
+          ...(refs.viaPartyName ? { viaPartyName: refs.viaPartyName } : {}),
           ...(created.description ? { entityName: created.description } : {}),
         },
       });

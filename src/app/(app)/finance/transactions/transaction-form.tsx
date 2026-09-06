@@ -76,6 +76,7 @@ const formSchema = z
       }, 'Amount must be greater than zero'),
     category: z.nativeEnum(FinanceCategory),
     partyId: z.string(),
+    viaPartyId: z.string(),
     accountId: z.string(),
     description: z
       .string()
@@ -94,6 +95,16 @@ const formSchema = z
     message: 'Pick a category that matches Money in / Money out',
     path: ['category'],
   })
+  .refine(
+    (v) =>
+      v.viaPartyId === NONE_VALUE ||
+      v.partyId === NONE_VALUE ||
+      v.viaPartyId !== v.partyId,
+    {
+      message: 'The routed-via person must be different from the party',
+      path: ['viaPartyId'],
+    },
+  )
   .refine(
     (v) => {
       if (!v.hasOriginal) return true;
@@ -166,6 +177,7 @@ export function TransactionForm({
           ? initialValues.category
           : DEFAULT_CATEGORY[initialDirection],
       partyId: initialValues?.partyId ?? NONE_VALUE,
+      viaPartyId: initialValues?.viaPartyId ?? NONE_VALUE,
       accountId: initialValues?.accountId ?? NONE_VALUE,
       description: initialValues?.description ?? '',
       reference: initialValues?.reference ?? '',
@@ -210,6 +222,7 @@ export function TransactionForm({
 
     if (mode === 'create') {
       if (values.partyId !== NONE_VALUE) payload.partyId = values.partyId;
+      if (values.viaPartyId !== NONE_VALUE) payload.viaPartyId = values.viaPartyId;
       if (values.accountId !== NONE_VALUE) payload.accountId = values.accountId;
       if (values.hasOriginal) {
         payload.originalAmount = Number(values.originalAmount);
@@ -222,6 +235,8 @@ export function TransactionForm({
       if (values.reference === '') delete payload.reference;
     } else {
       payload.partyId = values.partyId === NONE_VALUE ? null : values.partyId;
+      payload.viaPartyId =
+        values.viaPartyId === NONE_VALUE ? null : values.viaPartyId;
       payload.accountId =
         values.accountId === NONE_VALUE ? null : values.accountId;
       payload.originalAmount = values.hasOriginal
@@ -459,6 +474,46 @@ export function TransactionForm({
             )}
           />
         </div>
+
+        <FormField
+          control={form.control}
+          name="viaPartyId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                Routed via <span className="text-muted-foreground">(optional)</span>
+              </FormLabel>
+              <Select
+                value={field.value}
+                onValueChange={field.onChange}
+                disabled={isSubmitting}
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value={NONE_VALUE}>— Direct, nobody in between —</SelectItem>
+                  {parties.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        · {FINANCE_PARTY_TYPE_SHORT[p.type]}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormDescription>
+                Use when the bank paid someone else who passed the money on
+                (e.g. bank → Ritu → Shubham). The party above still gets the
+                credit; the person here is only shown as the route.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         <FormField
           control={form.control}

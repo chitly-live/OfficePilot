@@ -409,7 +409,9 @@ function ReportDocument({ report }: { report: FinanceReport }) {
               !t.description.includes(String(t.originalAmount))
                 ? `${t.description}${t.description ? ' ' : ''}(${t.originalAmount} ${t.originalCurrency})`
                 : t.description,
-            party: t.partyName,
+            party: t.viaPartyName
+              ? `${t.partyName || '—'}\nvia ${t.viaPartyName}`
+              : t.partyName,
             acct: t.accountName,
             ref: { text: t.reference, tone: 'muted' },
             in: t.direction === 'IN' ? money(t.amount) : '',

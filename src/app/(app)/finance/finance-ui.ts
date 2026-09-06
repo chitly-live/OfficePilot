@@ -104,6 +104,7 @@ export const PARTY_TYPE_TONE: Record<FinancePartyType, StatusTone> = {
   WORKER: 'green',
   VENDOR: 'neutral',
   CLIENT: 'green',
+  INTERMEDIARY: 'amber',
   OTHER: 'neutral',
 };
 

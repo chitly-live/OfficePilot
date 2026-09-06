@@ -105,16 +105,32 @@ export function TransactionsTable({
           header: 'Party',
           cell: ({ row }) => {
             const p = row.original.party;
-            if (!p) {
+            const via = row.original.viaParty;
+            if (!p && !via) {
               return <span className="text-sm text-muted-foreground">—</span>;
             }
             return (
-              <Link
-                href={`/finance/parties/${p.id}`}
-                className="text-sm text-foreground hover:underline"
-              >
-                {p.name}
-              </Link>
+              <div className="min-w-0">
+                {p ? (
+                  <Link
+                    href={`/finance/parties/${p.id}`}
+                    className="block truncate text-sm text-foreground hover:underline"
+                  >
+                    {p.name}
+                  </Link>
+                ) : (
+                  <span className="block text-sm text-muted-foreground">—</span>
+                )}
+                {via ? (
+                  <Link
+                    href={`/finance/parties/${via.id}`}
+                    className="block truncate text-[11px] text-status-amber hover:underline"
+                    title="Money was routed through this person; it does not count as paid to them"
+                  >
+                    ↳ via {via.name}
+                  </Link>
+                ) : null}
+              </div>
             );
           },
         });

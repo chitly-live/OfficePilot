@@ -130,6 +130,7 @@ export interface ReportSourceRow extends LedgerRow {
   description: string | null;
   reference: string | null;
   partyName: string | null;
+  viaPartyName: string | null;
   accountName: string | null;
 }
 
@@ -162,6 +163,8 @@ export interface ReportTransaction {
   description: string;
   reference: string;
   partyName: string;
+  /** Intermediary the bank paid, when the money was routed. */
+  viaPartyName: string;
   accountName: string;
 }
 
@@ -346,6 +349,7 @@ export function assembleFinanceReport(input: AssembleInput): FinanceReport {
     description: r.description ?? '',
     reference: r.reference ?? '',
     partyName: r.partyName ?? '',
+    viaPartyName: r.viaPartyName ?? '',
     accountName: r.accountName ?? '',
   }));
 
@@ -404,6 +408,7 @@ export async function buildFinanceReport(
         partyId: true,
         accountId: true,
         party: { select: { name: true } },
+        viaParty: { select: { name: true } },
         account: { select: { name: true, ownerPartyId: true } },
       },
     }),
@@ -447,6 +452,7 @@ export async function buildFinanceReport(
       accountId: r.accountId,
       accountOwnerPartyId: r.account?.ownerPartyId ?? null,
       partyName: r.party?.name ?? null,
+      viaPartyName: r.viaParty?.name ?? null,
       accountName: r.account?.name ?? null,
     })),
     accounts: accounts.map((a) => ({

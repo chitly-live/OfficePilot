@@ -211,6 +211,7 @@ export const FINANCE_PARTY_TYPE_LABELS: Record<FinancePartyType, string> = {
   WORKER: 'Host / worker (withdraws)',
   VENDOR: 'Vendor (we pay them)',
   CLIENT: 'Client (pays us)',
+  INTERMEDIARY: 'Intermediary (money passes through them)',
   OTHER: 'Other',
 };
 
@@ -221,6 +222,7 @@ export const FINANCE_PARTY_TYPE_SHORT: Record<FinancePartyType, string> = {
   WORKER: 'Worker',
   VENDOR: 'Vendor',
   CLIENT: 'Client',
+  INTERMEDIARY: 'Intermediary',
   OTHER: 'Other',
 };
 
@@ -367,8 +369,39 @@ export interface LedgerRow {
   category: FinanceCategory;
   amount: number;
   partyId?: string | null;
+  /** Intermediary the bank paid when the money was routed; no balance effect. */
+  viaPartyId?: string | null;
   accountId?: string | null;
   accountOwnerPartyId?: string | null;
+}
+
+export interface PassThrough {
+  /** Money that went out through this party on its way to someone else. */
+  routedOut: number;
+  /** Money that came in through this party from someone else. */
+  routedIn: number;
+  count: number;
+}
+
+/**
+ * How much money merely passed through a party (rows where they are the
+ * `viaPartyId`). Purely informational — balances ignore it.
+ */
+export function computePassThrough(
+  rows: readonly LedgerRow[],
+  partyId: string,
+): PassThrough {
+  let routedOut = 0;
+  let routedIn = 0;
+  let count = 0;
+  for (const row of rows) {
+    if (row.viaPartyId !== partyId) continue;
+    const amount = Number.isFinite(row.amount) ? row.amount : 0;
+    count += 1;
+    if (row.direction === 'OUT') routedOut += amount;
+    else routedIn += amount;
+  }
+  return { routedOut: round2(routedOut), routedIn: round2(routedIn), count };
 }
 
 export interface FinanceTotals {
