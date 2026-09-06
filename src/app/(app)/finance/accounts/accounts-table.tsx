@@ -30,6 +30,8 @@ export type AccountRow = FinanceAccountPublic & {
   balance: number;
   /** Present for credit cards. */
   card?: CardOverview | null;
+  /** Flow through this account inside the header product scope. */
+  scoped?: { moneyIn: number; moneyOut: number; count: number } | null;
 };
 
 const CARD_HEALTH_TONE: Record<CardHealth, 'green' | 'amber' | 'red' | 'neutral'> = {
@@ -44,6 +46,9 @@ export interface AccountsTableProps {
   items: AccountRow[];
   parties: AccountDialogPartyOption[];
   emptyAction?: React.ReactNode;
+  /** When set (e.g. "Arrows Go"), the balance / card columns are replaced by
+   *  that scope's money in / out through each account. */
+  scopeLabel?: string | null;
 }
 
 function DeleteAccountCell({ account }: { account: AccountRow }) {
@@ -91,7 +96,8 @@ function DeleteAccountCell({ account }: { account: AccountRow }) {
   );
 }
 
-export function AccountsTable({ items, parties, emptyAction }: AccountsTableProps) {
+export function AccountsTable({ items, parties, emptyAction, scopeLabel }: AccountsTableProps) {
+  const scoped = Boolean(scopeLabel);
   const columns = React.useMemo<DataTableColumn<AccountRow>[]>(
     () => [
       {
@@ -137,36 +143,91 @@ export function AccountsTable({ items, parties, emptyAction }: AccountsTableProp
           );
         },
       },
-      {
-        id: 'opening',
-        header: () => <span className="block text-right">Opening</span>,
-        cell: ({ row }) => (
-          <span className="block text-right text-sm tabular-nums text-muted-foreground">
-            {formatInr(row.original.openingBalance)}
-          </span>
-        ),
-      },
-      {
-        id: 'balance',
-        header: () => <span className="block text-right">Balance</span>,
-        cell: ({ row }) => (
-          <span
-            className={cn(
-              'block text-right text-sm font-semibold tabular-nums',
-              row.original.balance < 0 ? 'text-status-red' : 'text-foreground',
-            )}
-          >
-            {formatInr(row.original.balance)}
-          </span>
-        ),
-      },
+      ...(scoped
+        ? ([
+            {
+              id: 'scopedIn',
+              header: () => <span className="block text-right">Money in</span>,
+              cell: ({ row }) => (
+                <span className="block text-right text-sm tabular-nums text-status-green">
+                  {row.original.scoped?.moneyIn ? `+${formatInr(row.original.scoped.moneyIn)}` : '—'}
+                </span>
+              ),
+            },
+            {
+              id: 'scopedOut',
+              header: () => <span className="block text-right">Money out</span>,
+              cell: ({ row }) => (
+                <span className="block text-right text-sm tabular-nums text-status-red">
+                  {row.original.scoped?.moneyOut ? `−${formatInr(row.original.scoped.moneyOut)}` : '—'}
+                </span>
+              ),
+            },
+            {
+              id: 'scopedNet',
+              header: () => <span className="block text-right">Net</span>,
+              cell: ({ row }) => {
+                const s = row.original.scoped;
+                const net = (s?.moneyIn ?? 0) - (s?.moneyOut ?? 0);
+                return (
+                  <span
+                    className={cn(
+                      'block text-right text-sm font-semibold tabular-nums',
+                      net < 0 ? 'text-status-red' : 'text-foreground',
+                    )}
+                  >
+                    {formatInr(net)}
+                    {s?.count ? (
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">
+                        · {s.count}
+                      </span>
+                    ) : null}
+                  </span>
+                );
+              },
+            },
+          ] satisfies DataTableColumn<AccountRow>[])
+        : ([
+            {
+              id: 'opening',
+              header: () => <span className="block text-right">Opening</span>,
+              cell: ({ row }) => (
+                <span className="block text-right text-sm tabular-nums text-muted-foreground">
+                  {formatInr(row.original.openingBalance)}
+                </span>
+              ),
+            },
+            {
+              id: 'balance',
+              header: () => <span className="block text-right">Balance</span>,
+              cell: ({ row }) => (
+                <span
+                  className={cn(
+                    'block text-right text-sm font-semibold tabular-nums',
+                    row.original.balance < 0 ? 'text-status-red' : 'text-foreground',
+                  )}
+                >
+                  {formatInr(row.original.balance)}
+                </span>
+              ),
+            },
+          ] satisfies DataTableColumn<AccountRow>[])),
       {
         id: 'card',
-        header: 'Card limit & bill',
+        header: scoped ? 'Card' : 'Card limit & bill',
         cell: ({ row }) => {
           const card = row.original.card;
           if (!card) {
             return <span className="text-sm text-muted-foreground">—</span>;
+          }
+          if (scoped) {
+            return (
+              <div className="text-xs text-muted-foreground">
+                {formatInr(row.original.scoped?.moneyOut ?? 0)} of this card&apos;s{' '}
+                {formatInr(card.position.outstanding)} outstanding is {scopeLabel}.
+                {card.creditLimit ? ` Limit ${formatInr(card.creditLimit)}.` : ''}
+              </div>
+            );
           }
           const { position, cycle } = card;
           return (
@@ -255,7 +316,7 @@ export function AccountsTable({ items, parties, emptyAction }: AccountsTableProp
         ),
       },
     ],
-    [parties],
+    [parties, scoped, scopeLabel],
   );
 
   return (
