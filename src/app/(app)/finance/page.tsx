@@ -33,7 +33,9 @@ import {
   shiftMonthKey,
   toMonthKey,
 } from '@/lib/finance';
+import { loadSalaryBoard } from '@/lib/finance-employee';
 import { loadFinanceSummary } from '@/lib/finance-summary';
+import { SALARY_STATUS_LABELS, type SalaryStatus } from '@/lib/salary';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -90,6 +92,13 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
   const range = monthRange(monthKey)!;
 
   const summary = await loadFinanceSummary(prisma, range);
+  const salaryBoard = await loadSalaryBoard(prisma, monthKey);
+  const salaryTone: Record<SalaryStatus, 'green' | 'amber' | 'red' | 'neutral'> = {
+    PAID: 'green',
+    PARTIAL: 'amber',
+    PENDING: 'red',
+    NOT_SET: 'neutral',
+  };
   const { totals } = summary;
 
   const prevKey = shiftMonthKey(monthKey, -1);
@@ -253,6 +262,63 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Salaries for the selected month */}
+      {salaryBoard.rows.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Salaries — {monthLabel(monthKey)}</CardTitle>
+            <CardDescription>
+              Agreed monthly pay from each employee&apos;s profile vs. salary payouts recorded
+              this month. {formatInr(salaryBoard.paidTotal)} paid of{' '}
+              {formatInr(salaryBoard.expectedTotal)}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y">
+              {salaryBoard.rows.map((row) => {
+                const payHref = row.partyId
+                  ? `/finance/transactions/new?direction=OUT&category=SALARY&partyId=${row.partyId}&amount=${row.monthlySalary}&description=${encodeURIComponent(`${row.salaryLabel || 'Salary'} — ${monthLabel(monthKey)}`)}&returnTo=/finance?month=${monthKey}`
+                  : `/employees/${row.userId}`;
+                return (
+                  <li
+                    key={row.userId}
+                    className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <Link
+                        href={`/employees/${row.userId}`}
+                        className="font-medium text-foreground hover:underline"
+                      >
+                        {row.name}
+                      </Link>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {row.salaryLabel || 'Salary'}
+                        {row.designation ? ` · ${row.designation}` : ''}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="tabular-nums text-muted-foreground">
+                        {formatInr(row.paid)} / {formatInr(row.monthlySalary)}
+                      </span>
+                      <StatusBadge
+                        status={row.status}
+                        tone={salaryTone[row.status]}
+                        label={SALARY_STATUS_LABELS[row.status]}
+                      />
+                      {row.status !== 'PAID' ? (
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={payHref}>Pay</Link>
+                        </Button>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Outstanding + accounts */}
       <div className="grid gap-4 lg:grid-cols-2">

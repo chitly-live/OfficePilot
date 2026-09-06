@@ -25,7 +25,7 @@ A self-hosted, single-tenant, role-based internal tool that replaces the typical
 | Module | What it does |
 |---|---|
 | 📊 **Dashboard** | 4-row unified pulse: today's metrics, latest AI insights, release+campaign timeline, follow-up reminders |
-| 👥 **Employees** | Roster, role-based access (admin/employee), **per-module visibility permissions**, attendance, performance snapshots, self-service **forgot password** (emailed single-use link, 30-min expiry) |
+| 👥 **Employees** | Roster, role-based access (admin/employee), **per-module visibility permissions**, attendance, performance snapshots, **salary / stipend** per employee with paid-vs-pending per month (linked to Finance), self-service **forgot password** (emailed single-use link, 30-min expiry) |
 | 📥 **Leads** | Full CRM: capture (manual + CSV + webhook), 6-stage pipeline kanban, owner assignment, follow-up reminders, activity timeline, UTM auto-attribution |
 | 📢 **Marketing** | Campaigns with budget/spend/signups tracking, auto-CAC calculation, UTM generator, channel comparison charts |
 | 📱 **Social** | Post composer with scheduled calendar view, performance log, winners gallery, hashtag library |
@@ -54,7 +54,7 @@ A self-hosted, single-tenant, role-based internal tool that replaces the typical
 - **Anthropic SDK** (Claude — Opus 4.7 / Sonnet 4.6 / Haiku 4.5) for AI Analysis
 - **Recharts** for dashboards
 - **react-hook-form** + **zod** for forms
-- **Vitest** + **Playwright** for testing (302 unit + 321 integration + 16 E2E)
+- **Vitest** + **Playwright** for testing (308 unit + 326 integration + 16 E2E)
 - **node-cron** worker (PM2-managed in prod) for scheduled jobs
 - **AES-256-GCM** for at-rest secret encryption
 - **nodemailer** for SMTP (Gmail / SES / any standard provider)
@@ -139,7 +139,7 @@ officepilot/
 │   └── seed.ts             # Idempotent admin seed
 ├── worker/                 # Standalone cron worker (node-cron + PM2)
 ├── tests/
-│   ├── integration/        # 23 files, 321 tests (real Postgres)
+│   ├── integration/        # 24 files, 326 tests (real Postgres)
 │   └── e2e/                # 8 Playwright specs across chromium + mobile-chrome projects
 ├── docs/
 │   ├── HANDOFF.md          # Per-release proof + change log
@@ -157,8 +157,8 @@ officepilot/
 
 | Suite | Command | Count | What it covers |
 |---|---|---|---|
-| Unit | `npm run test` | 302 tests, 9 files | `src/lib/` helpers — permissions, activity, utm, crypto, trend, env, finance, finance-report, password-reset |
-| Integration | `npm run test:int` | 321 tests, 23 files | Every API route against real Postgres — auth gates, validation, persistence, audit log |
+| Unit | `npm run test` | 308 tests, 10 files | `src/lib/` helpers — permissions, activity, utm, crypto, trend, env, finance, finance-report, salary, password-reset |
+| Integration | `npm run test:int` | 326 tests, 24 files | Every API route against real Postgres — auth gates, validation, persistence, audit log |
 | E2E | `npm run test:e2e` | 16 tests, 8 files | Critical user flows via Playwright (chromium + Pixel 5 mobile) |
 
 Quality signals:

@@ -101,6 +101,19 @@ const designationField = z
   .min(1, 'Designation cannot be empty')
   .max(MAX_DESIGNATION_LENGTH, `Designation must be ${MAX_DESIGNATION_LENGTH} characters or fewer`);
 
+/** Agreed monthly pay (salary / stipend) in INR. `null` clears it. */
+const monthlySalaryField = z.coerce
+  .number()
+  .min(0, 'Salary cannot be negative')
+  .max(100_000_000, 'Salary is unrealistically large');
+
+/** Short label shown next to the amount, e.g. "Intern stipend". */
+const salaryLabelField = z
+  .string()
+  .trim()
+  .min(1, 'Salary label cannot be empty')
+  .max(60, 'Salary label must be 60 characters or fewer');
+
 const avatarUrlField = z
   .string()
   .trim()
@@ -220,6 +233,10 @@ export const userUpdateSchema = z
     avatarUrl: avatarUrlField.optional(),
     /** Soft-delete toggle. Admin-only; the route handler must enforce. */
     isActive: z.boolean().optional(),
+    /** Monthly salary / stipend. Admin-only; `null` clears. */
+    monthlySalary: monthlySalaryField.nullable().optional(),
+    /** Label for the pay, e.g. "Intern stipend". Admin-only; `null` clears. */
+    salaryLabel: salaryLabelField.nullable().optional(),
     /**
      * Per-module access whitelist update. Admin-only in practice; an
      * EMPLOYEE-self PATCH that includes this key is rejected by the route

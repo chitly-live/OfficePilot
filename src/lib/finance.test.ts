@@ -111,7 +111,7 @@ describe('FINANCE_CATEGORY_META', () => {
   });
 
   it('party / account type lists are complete', () => {
-    expect(ALL_FINANCE_PARTY_TYPES).toHaveLength(7);
+    expect(ALL_FINANCE_PARTY_TYPES).toHaveLength(8);
     expect(ALL_FINANCE_ACCOUNT_TYPES).toHaveLength(6);
   });
 });

@@ -126,6 +126,13 @@ export default async function PartyDetailPage({ params }: PageProps) {
       icon: ArrowUpRight,
       primary: true,
     });
+  } else if (party.type === 'EMPLOYEE') {
+    quickLinks.push({
+      href: `${newBase}&direction=OUT&category=SALARY`,
+      label: 'Record salary',
+      icon: ArrowUpRight,
+      primary: true,
+    });
   } else if (party.type === 'CLIENT') {
     quickLinks.push({
       href: `${newBase}&direction=IN&category=SALES`,
@@ -167,6 +174,11 @@ export default async function PartyDetailPage({ params }: PageProps) {
                 <span>Back</span>
               </Link>
             </Button>
+            {party.userId ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/employees/${party.userId}`}>Employee profile</Link>
+              </Button>
+            ) : null}
             {quickLinks.map((q) => {
               const Icon = q.icon;
               return (

@@ -476,6 +476,7 @@ export const financePartyProjection = {
   email: true,
   notes: true,
   isActive: true,
+  userId: true,
   createdById: true,
   createdAt: true,
   updatedAt: true,
@@ -489,6 +490,8 @@ export type FinancePartyPublic = {
   email: string | null;
   notes: string | null;
   isActive: boolean;
+  /** Panel user this party represents (type EMPLOYEE), if any. */
+  userId: string | null;
   createdById: string;
   createdAt: Date;
   updatedAt: Date;

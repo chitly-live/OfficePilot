@@ -211,6 +211,7 @@ export const FINANCE_PARTY_TYPE_LABELS: Record<FinancePartyType, string> = {
   WORKER: 'Host / worker (withdraws)',
   VENDOR: 'Vendor (we pay them)',
   CLIENT: 'Client (pays us)',
+  EMPLOYEE: 'Employee (salary / stipend, linked to the panel)',
   INTERMEDIARY: 'Intermediary (money passes through them)',
   OTHER: 'Other',
 };
@@ -222,6 +223,7 @@ export const FINANCE_PARTY_TYPE_SHORT: Record<FinancePartyType, string> = {
   WORKER: 'Worker',
   VENDOR: 'Vendor',
   CLIENT: 'Client',
+  EMPLOYEE: 'Employee',
   INTERMEDIARY: 'Intermediary',
   OTHER: 'Other',
 };

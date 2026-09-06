@@ -256,6 +256,10 @@ export async function PATCH(
     if (input.joinedAt !== undefined) data.joinedAt = input.joinedAt;
     if (input.avatarUrl !== undefined) data.avatarUrl = input.avatarUrl;
     if (input.isActive !== undefined) data.isActive = input.isActive;
+    // Salary fields never pass the EMPLOYEE_SELF_EDITABLE_FIELDS gate above,
+    // so only admins reach here with them.
+    if (input.monthlySalary !== undefined) data.monthlySalary = input.monthlySalary;
+    if (input.salaryLabel !== undefined) data.salaryLabel = input.salaryLabel;
     if (input.password !== undefined) {
       data.passwordHash = await hash(input.password, BCRYPT_COST);
       // Signs the user's other devices out on their next session re-check.

@@ -68,10 +68,18 @@ export default async function NewTransactionPage({
 
   const partyId = coerceParam(searchParams?.partyId);
   const accountId = coerceParam(searchParams?.accountId);
+  const amountRaw = coerceParam(searchParams?.amount);
+  const amountPrefill =
+    amountRaw && Number.isFinite(Number(amountRaw)) && Number(amountRaw) > 0
+      ? String(Number(amountRaw))
+      : undefined;
+  const descriptionPrefill = coerceParam(searchParams?.description)?.slice(0, 500);
   const month = coerceParam(searchParams?.month);
   const returnToRaw = coerceParam(searchParams?.returnTo);
   const returnTo =
-    returnToRaw && returnToRaw.startsWith('/finance') && !returnToRaw.startsWith('//')
+    returnToRaw &&
+    (returnToRaw.startsWith('/finance') || returnToRaw.startsWith('/employees')) &&
+    !returnToRaw.startsWith('//')
       ? returnToRaw
       : month && (month === ALL_MONTHS || /^\d{4}-\d{2}$/.test(month))
         ? `/finance/transactions?month=${month}`
@@ -142,6 +150,8 @@ export default async function NewTransactionPage({
               ...(accountId && accounts.some((a) => a.id === accountId)
                 ? { accountId }
                 : {}),
+              ...(amountPrefill ? { amount: amountPrefill } : {}),
+              ...(descriptionPrefill ? { description: descriptionPrefill } : {}),
             }}
             returnTo={returnTo}
           />

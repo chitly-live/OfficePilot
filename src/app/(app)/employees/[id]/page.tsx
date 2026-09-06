@@ -63,7 +63,13 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 
+import { formatInr, monthLabel } from '@/lib/finance';
+import { loadEmployeeSalary } from '@/lib/finance-employee';
+import { SALARY_STATUS_LABELS, type SalaryStatus } from '@/lib/salary';
+
 import { EmployeeProfileForm } from './employee-profile-form';
+import { RecordSalaryButton } from './record-salary-button';
+import { SalaryForm } from './salary-form';
 import { AttendanceForm } from './attendance-form';
 import { DeactivateButton } from './deactivate-button';
 
@@ -212,6 +218,14 @@ export default async function EmployeeDetailPage({ params }: PageProps) {
 
   const employee = user as UserPublic;
   const stats = await fetchUserStats(employee.id);
+  // Admin or self only (both already enforced above).
+  const salary = await loadEmployeeSalary(prisma, employee.id);
+  const salaryTone: Record<SalaryStatus, 'green' | 'amber' | 'red' | 'neutral'> = {
+    PAID: 'green',
+    PARTIAL: 'amber',
+    PENDING: 'red',
+    NOT_SET: 'neutral',
+  };
 
   const attendanceTotal = Object.values(stats.attendanceLast30Days).reduce(
     (sum, count) => sum + count,
@@ -296,6 +310,113 @@ export default async function EmployeeDetailPage({ params }: PageProps) {
         </TabsList>
 
         <TabsContent value="profile" className="space-y-4">
+          {salary ? (
+            <Card>
+              <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+                <div className="space-y-1">
+                  <CardTitle>
+                    {salary.salaryLabel || 'Salary'}
+                    {salary.monthlySalary ? (
+                      <span className="ml-2 text-base font-semibold text-foreground">
+                        {formatInr(salary.monthlySalary)} / month
+                      </span>
+                    ) : null}
+                  </CardTitle>
+                  <CardDescription>
+                    {salary.monthlySalary
+                      ? `${monthLabel(salary.currentMonth)}: ${SALARY_STATUS_LABELS[salary.currentStatus]}. Paid so far ${formatInr(salary.totalPaid)} across ${salary.payments.length} payment${salary.payments.length === 1 ? '' : 's'}.`
+                      : isAdmin
+                        ? 'No monthly amount set yet. Set it below so Finance can track paid / pending per month.'
+                        : 'No salary details on file.'}
+                  </CardDescription>
+                </div>
+                {isAdmin ? (
+                  <RecordSalaryButton
+                    userId={employee.id}
+                    amount={salary.monthlySalary}
+                    description={
+                      salary.monthlySalary
+                        ? `${salary.salaryLabel || 'Salary'} — ${monthLabel(salary.currentMonth)}`
+                        : undefined
+                    }
+                    returnTo={`/employees/${employee.id}`}
+                  />
+                ) : null}
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {isAdmin ? (
+                  <SalaryForm
+                    userId={employee.id}
+                    monthlySalary={salary.monthlySalary}
+                    salaryLabel={salary.salaryLabel}
+                  />
+                ) : null}
+
+                {salary.monthlySalary ? (
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Month by month
+                    </p>
+                    <ul className="divide-y rounded-md border">
+                      {salary.timeline.map((line) => (
+                        <li
+                          key={line.month}
+                          className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                        >
+                          <span>{monthLabel(line.month)}</span>
+                          <span className="flex items-center gap-3">
+                            <span className="tabular-nums text-muted-foreground">
+                              {formatInr(line.paid)} / {formatInr(line.expected ?? 0)}
+                            </span>
+                            <StatusBadge
+                              status={line.status}
+                              tone={salaryTone[line.status]}
+                              label={SALARY_STATUS_LABELS[line.status]}
+                            />
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {salary.payments.length > 0 ? (
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Payments
+                    </p>
+                    <ul className="divide-y rounded-md border">
+                      {salary.payments.map((p) => (
+                        <li
+                          key={p.id}
+                          className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                        >
+                          <span className="min-w-0">
+                            <span className="text-muted-foreground">{formatDate(p.date)}</span>
+                            <span className="ml-2 truncate">{p.description || 'Salary'}</span>
+                            {p.accountName ? (
+                              <span className="ml-2 text-xs text-muted-foreground">· {p.accountName}</span>
+                            ) : null}
+                          </span>
+                          {isAdmin ? (
+                            <Link
+                              href={`/finance/transactions/${p.id}`}
+                              className="font-semibold tabular-nums hover:underline"
+                            >
+                              {formatInr(p.amount)}
+                            </Link>
+                          ) : (
+                            <span className="font-semibold tabular-nums">{formatInr(p.amount)}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardHeader>
               <CardTitle>Edit profile</CardTitle>
