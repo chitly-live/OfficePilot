@@ -146,7 +146,7 @@ function Brand({ onNavigate }: BrandProps) {
           Office<span className="text-brand-600">Pilot</span>
         </span>
         <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-          Chitly
+          Praxxel
         </span>
       </span>
     </Link>

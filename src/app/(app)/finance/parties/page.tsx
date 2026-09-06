@@ -10,6 +10,8 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatInr } from '@/lib/finance';
 import { loadPartyBalances } from '@/lib/finance-summary';
+import { productWhere, scopeLabel } from '@/lib/products';
+import { getProductContext } from '@/lib/products-server';
 import {
   financePartyListQuerySchema,
   financePartyProjection,
@@ -66,7 +68,27 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
     ? parsed.data
     : financePartyListQuerySchema.parse({});
 
+  // Header product switcher: in a product / company-level scope only show
+  // parties that actually have rows in that scope, with balances computed
+  // from those rows alone.
+  const productContext = await getProductContext(prisma);
+  const scope = productContext.scope;
+  const scopeText = scopeLabel(scope, productContext.companyShort);
+
   const where: Prisma.FinancePartyWhereInput = {};
+  if (scope.kind !== 'all') {
+    const scoped = await prisma.financeTransaction.findMany({
+      where: productWhere(scope),
+      select: { partyId: true, viaPartyId: true, account: { select: { ownerPartyId: true } } },
+    });
+    const ids = new Set<string>();
+    for (const r of scoped) {
+      if (r.partyId) ids.add(r.partyId);
+      if (r.viaPartyId) ids.add(r.viaPartyId);
+      if (r.account?.ownerPartyId) ids.add(r.account.ownerPartyId);
+    }
+    where.id = { in: [...ids] };
+  }
   if (query.type && query.type.length > 0) where.type = { in: query.type };
   if (!showInactive) where.isActive = true;
   if (query.search) {
@@ -89,7 +111,7 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
     prisma.financeParty.count({ where }),
   ]);
 
-  const balances = await loadPartyBalances(prisma);
+  const balances = await loadPartyBalances(prisma, undefined, scope);
   const items: PartyRow[] = rows.map((p) => ({
     ...(p as unknown as FinancePartyPublic),
     balance: balances.get(p.id) ?? null,
@@ -100,6 +122,7 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
   let financerCount = 0;
   let cardOwnerCount = 0;
   const allParties = await prisma.financeParty.findMany({
+    where: scope.kind !== 'all' ? { id: where.id } : {},
     select: { id: true, type: true },
   });
   for (const p of allParties) {
@@ -115,7 +138,11 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
     <div className="space-y-6">
       <PageHeader
         title="Parties"
-        subtitle="Financers, card owners, hosts, vendors, clients — and what we owe each."
+        subtitle={
+          scope.kind === 'all'
+            ? 'Financers, card owners, hosts, vendors, clients — and what we owe each.'
+            : `${scopeText} — only parties with entries in this scope; balances count those entries alone.`
+        }
         actions={<PartyDialog mode="create" />}
       />
 

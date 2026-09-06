@@ -18,7 +18,8 @@ import {
   formatInr,
 } from '@/lib/finance';
 import { loadPartyBalance } from '@/lib/finance-summary';
-import { loadProducts } from '@/lib/products-server';
+import { productWhere, scopeLabel } from '@/lib/products';
+import { getProductContext, loadProducts } from '@/lib/products-server';
 import {
   financePartyProjection,
   financeTransactionProjection,
@@ -69,6 +70,10 @@ export default async function PartyDetailPage({ params }: PageProps) {
     redirect('/dashboard');
   }
 
+  const productContext = await getProductContext(prisma);
+  const scope = productContext.scope;
+  const scopeText = scopeLabel(scope, productContext.companyShort);
+
   const [partyRow, ledgerRows, accounts, routedRows, productRows, productSplitRows] = await Promise.all([
     prisma.financeParty.findUnique({
       where: { id: params.id },
@@ -76,6 +81,7 @@ export default async function PartyDetailPage({ params }: PageProps) {
     }),
     prisma.financeTransaction.findMany({
       where: {
+        ...productWhere(scope),
         OR: [
           { partyId: params.id },
           { viaPartyId: params.id },
@@ -93,7 +99,7 @@ export default async function PartyDetailPage({ params }: PageProps) {
     }),
     // Money that only passed through this party on its way to someone else.
     prisma.financeTransaction.findMany({
-      where: { viaPartyId: params.id },
+      where: { ...productWhere(scope), viaPartyId: params.id },
       select: { direction: true, category: true, amount: true, viaPartyId: true },
     }),
     loadProducts(prisma, { includeInactive: true }),
@@ -125,7 +131,7 @@ export default async function PartyDetailPage({ params }: PageProps) {
   })();
 
   const party = partyRow as unknown as FinancePartyPublic;
-  const balance = await loadPartyBalance(prisma, party.id);
+  const balance = await loadPartyBalance(prisma, party.id, scope);
   const passThrough = computePassThrough(routedRows, party.id);
   const ledger = ledgerRows as unknown as FinanceTransactionPublic[];
 
@@ -191,7 +197,11 @@ export default async function PartyDetailPage({ params }: PageProps) {
             ) : null}
           </span>
         }
-        subtitle={FINANCE_PARTY_TYPE_LABELS[party.type]}
+        subtitle={
+          scope.kind === 'all'
+            ? FINANCE_PARTY_TYPE_LABELS[party.type]
+            : `${FINANCE_PARTY_TYPE_LABELS[party.type]} · showing ${scopeText} entries only`
+        }
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild variant="outline" size="sm">

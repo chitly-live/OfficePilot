@@ -20,7 +20,7 @@ import type {
   PrismaClient,
 } from '@prisma/client';
 
-import type { ProductScope } from '@/lib/products';
+import { productWhere, type ProductScope } from '@/lib/products';
 import {
   FINANCE_CATEGORY_META,
   computeAccountBalance,
@@ -183,8 +183,12 @@ function toDbRow(row: RawRow): DbRow {
   };
 }
 
-async function loadAllRows(db: FinanceDbClient): Promise<DbRow[]> {
+async function loadAllRows(
+  db: FinanceDbClient,
+  scope: ProductScope = { kind: 'all' },
+): Promise<DbRow[]> {
   const rows = await db.financeTransaction.findMany({
+    where: productWhere(scope),
     select: ROW_SELECT,
     orderBy: [{ date: 'asc' }, { id: 'asc' }],
   });
@@ -202,8 +206,9 @@ async function loadAllRows(db: FinanceDbClient): Promise<DbRow[]> {
 export async function loadPartyBalances(
   db: FinanceDbClient,
   partyIds?: readonly string[],
+  scope: ProductScope = { kind: 'all' },
 ): Promise<Map<string, PartyBalance>> {
-  const rows = await loadAllRows(db);
+  const rows = await loadAllRows(db, scope);
   const ids =
     partyIds ??
     Array.from(
@@ -226,8 +231,9 @@ export async function loadPartyBalances(
 export async function loadPartyBalance(
   db: FinanceDbClient,
   partyId: string,
+  scope: ProductScope = { kind: 'all' },
 ): Promise<PartyBalance> {
-  const rows = await loadAllRows(db);
+  const rows = await loadAllRows(db, scope);
   return computePartyBalance(rows, partyId);
 }
 
