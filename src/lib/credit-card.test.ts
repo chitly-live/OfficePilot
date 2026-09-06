@@ -17,28 +17,32 @@ const iso = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 const at = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
 describe('currentBillingCycle', () => {
-  it('RBL: statement on the 13th, due on the 1st of next month', () => {
+  it('RBL: statement on the 13th covers 13 Aug – 12 Sep, due on the 1st of next month', () => {
     const c = currentBillingCycle(13, at('2026-09-06'), 1);
-    expect(iso(c.from)).toBe('2026-08-14');
+    expect(iso(c.from)).toBe('2026-08-13');
+    expect(iso(c.to)).toBe('2026-09-12');
     expect(iso(c.statementDate)).toBe('2026-09-13');
     expect(iso(c.dueDate)).toBe('2026-10-01');
   });
 
-  it('on the statement day itself the cycle still ends today', () => {
+  it('on the statement day itself a new cycle has already started', () => {
     const c = currentBillingCycle(13, at('2026-09-13'), 1);
-    expect(iso(c.statementDate)).toBe('2026-09-13');
-    expect(iso(c.from)).toBe('2026-08-14');
-  });
-
-  it('after the statement day the next cycle starts', () => {
-    const c = currentBillingCycle(13, at('2026-09-14'), 1);
-    expect(iso(c.from)).toBe('2026-09-14');
+    expect(iso(c.from)).toBe('2026-09-13');
+    expect(iso(c.to)).toBe('2026-10-12');
     expect(iso(c.statementDate)).toBe('2026-10-13');
     expect(iso(c.dueDate)).toBe('2026-11-01');
   });
 
+  it('the day before the statement is still the old cycle', () => {
+    const c = currentBillingCycle(13, at('2026-09-12'), 1);
+    expect(iso(c.from)).toBe('2026-08-13');
+    expect(iso(c.statementDate)).toBe('2026-09-13');
+  });
+
   it('SBI: statement on the 10th, due on the 29th of the same month', () => {
     const c = currentBillingCycle(10, at('2026-09-06'), 29);
+    expect(iso(c.from)).toBe('2026-08-10');
+    expect(iso(c.to)).toBe('2026-09-09');
     expect(iso(c.statementDate)).toBe('2026-09-10');
     expect(iso(c.dueDate)).toBe('2026-09-29');
   });
@@ -46,9 +50,11 @@ describe('currentBillingCycle', () => {
   it('clamps to short months and wraps the year', () => {
     const c = currentBillingCycle(31, at('2026-02-10'), 15);
     expect(iso(c.statementDate)).toBe('2026-02-28');
-    expect(iso(c.from)).toBe('2026-02-01');
+    expect(iso(c.from)).toBe('2026-01-31');
+    expect(iso(c.to)).toBe('2026-02-27');
     expect(iso(c.dueDate)).toBe('2026-03-15');
     const dec = currentBillingCycle(17, at('2026-12-20'), 5);
+    expect(iso(dec.from)).toBe('2026-12-17');
     expect(iso(dec.statementDate)).toBe('2027-01-17');
     expect(iso(dec.dueDate)).toBe('2027-02-05');
   });
@@ -59,7 +65,7 @@ describe('currentBillingCycle', () => {
 });
 
 describe('computeCardPosition', () => {
-  const cycle = { from: at('2026-08-14'), statementDate: at('2026-09-13') };
+  const cycle = { from: at('2026-08-13'), to: at('2026-09-12') };
   const rows: CardLedgerRow[] = [
     { direction: 'OUT', amount: 12000, date: at('2026-08-07'), onCard: true, settlesCard: false }, // previous cycle
     { direction: 'OUT', amount: 29722, date: at('2026-08-12'), onCard: true, settlesCard: false },

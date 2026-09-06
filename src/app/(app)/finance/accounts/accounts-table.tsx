@@ -191,8 +191,9 @@ export function AccountsTable({ items, parties, emptyAction }: AccountsTableProp
               ) : null}
               {cycle ? (
                 <div className="text-xs text-muted-foreground">
-                  Cycle {formatDateUtc(cycle.from)} – {formatDateUtc(cycle.statementDate)} ·{' '}
-                  {formatInr(position.cycleSpend)} spent
+                  Cycle {formatDateUtc(cycle.from)} – {formatDateUtc(cycle.to)} ·{' '}
+                  {formatInr(position.cycleSpend)} spent · statement{' '}
+                  {formatDateUtc(cycle.statementDate)}
                   {cycle.dueDate ? (
                     <>
                       {' '}· due{' '}

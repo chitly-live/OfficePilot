@@ -21,9 +21,11 @@ import { round2 } from '@/lib/finance';
 // ---------------------------------------------------------------------------
 
 export interface BillingCycle {
-  /** First day of the cycle (UTC midnight). */
+  /** First day of the cycle = last month's statement day (UTC midnight). */
   from: Date;
-  /** Statement date = last day of the cycle (UTC midnight). */
+  /** Last day of the cycle = the day before the statement (UTC midnight). */
+  to: Date;
+  /** Day the statement for this cycle is generated (UTC midnight). */
   statementDate: Date;
   /** Payment due date for that statement (UTC midnight). */
   dueDate: Date | null;
@@ -40,8 +42,9 @@ function dayInMonth(y: number, m: number, day: number): Date {
 }
 
 /**
- * The cycle `now` falls in: it ends on the next statement day (today if
- * today is the statement day), and starts the day after the previous one.
+ * The open cycle `now` falls in. Bank convention: the statement generated
+ * on the 13th covers the 13th of last month through the 12th of this
+ * month, so on the statement day itself a new cycle has already started.
  */
 export function currentBillingCycle(
   billingDay: number,
@@ -53,14 +56,14 @@ export function currentBillingCycle(
   const today = now.getUTCDate();
   const thisMonthStatement = dayInMonth(y, m, billingDay);
   const statementDate =
-    today <= thisMonthStatement.getUTCDate() ? thisMonthStatement : dayInMonth(y, m + 1, billingDay);
-  const prevStatement = dayInMonth(
+    today < thisMonthStatement.getUTCDate() ? thisMonthStatement : dayInMonth(y, m + 1, billingDay);
+  const from = dayInMonth(
     statementDate.getUTCFullYear(),
     statementDate.getUTCMonth() - 1,
     billingDay,
   );
-  const from = new Date(prevStatement.getTime() + 24 * 60 * 60 * 1000);
-  return { from, statementDate, dueDate: dueDateFor(statementDate, dueDay) };
+  const to = new Date(statementDate.getTime() - 24 * 60 * 60 * 1000);
+  return { from, to, statementDate, dueDate: dueDateFor(statementDate, dueDay) };
 }
 
 /** First occurrence of `dueDay` strictly after the statement date. */
@@ -101,7 +104,7 @@ export interface CardPosition {
 export function computeCardPosition(
   rows: readonly CardLedgerRow[],
   creditLimit: number | null | undefined,
-  cycle?: Pick<BillingCycle, 'from' | 'statementDate'> | null,
+  cycle?: Pick<BillingCycle, 'from' | 'to'> | null,
 ): CardPosition {
   let spend = 0;
   let refunds = 0;
@@ -111,7 +114,7 @@ export function computeCardPosition(
   const inCycle = (d: Date) =>
     !!cycle &&
     d.getTime() >= cycle.from.getTime() &&
-    d.getTime() <= cycle.statementDate.getTime() + 24 * 60 * 60 * 1000 - 1;
+    d.getTime() <= cycle.to.getTime() + 24 * 60 * 60 * 1000 - 1;
   for (const r of rows) {
     const amount = Number.isFinite(r.amount) ? r.amount : 0;
     if (r.onCard) {

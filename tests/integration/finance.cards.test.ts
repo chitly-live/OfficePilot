@@ -105,7 +105,7 @@ describe('loadCardOverview', () => {
         },
       });
     await mk('2026-08-07', 'ADS', 12000, { accountId: rbl.id });          // previous cycle
-    await mk('2026-08-20', 'ADS', 30000, { accountId: rbl.id });          // current cycle (14 Aug – 13 Sep)
+    await mk('2026-08-20', 'ADS', 30000, { accountId: rbl.id });          // current cycle (13 Aug – 12 Sep)
     await mk('2026-08-26', 'CARD_REPAYMENT', 20000, { accountId: bank.id, partyId: shubham.id, settlesAccountId: rbl.id });
     await mk('2026-09-01', 'CARD_REPAYMENT', 5000, { accountId: bank.id, partyId: shubham.id }); // not attributed to a card
 
@@ -114,7 +114,8 @@ describe('loadCardOverview', () => {
     expect(card.ownerName).toBe('Shubham Kumar');
     expect(card.position).toMatchObject({ spend: 42000, repaid: 20000, outstanding: 22000, available: 38000, cycleSpend: 30000, cycleRepaid: 20000 });
     expect(card.health).toBe('OK');
-    expect(card.cycle!.from.toISOString().slice(0, 10)).toBe('2026-08-14');
+    expect(card.cycle!.from.toISOString().slice(0, 10)).toBe('2026-08-13');
+    expect(card.cycle!.to.toISOString().slice(0, 10)).toBe('2026-09-12');
     expect(card.cycle!.statementDate.toISOString().slice(0, 10)).toBe('2026-09-13');
     expect(card.cycle!.dueDate!.toISOString().slice(0, 10)).toBe('2026-10-01');
     expect(card.daysToDue).toBe(25);
