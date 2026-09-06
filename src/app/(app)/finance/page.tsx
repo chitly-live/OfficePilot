@@ -336,8 +336,10 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
         </Card>
       ) : null}
 
-      {/* Credit cards: outstanding vs limit, next bill */}
-      {cards.some((c) => c.position.outstanding !== 0 || c.creditLimit) ? (
+      {/* Credit cards: outstanding vs limit, next bill. Cards belong to the
+          company, so this stays out of a single product's view. */}
+      {productContext.scope.kind !== 'product' &&
+      cards.some((c) => c.position.outstanding !== 0 || c.creditLimit) ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Credit cards</CardTitle>
@@ -403,8 +405,8 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
         </Card>
       ) : null}
 
-      {/* Salaries for the selected month */}
-      {salaryBoard.rows.length > 0 ? (
+      {/* Salaries for the selected month — company-level, never per product. */}
+      {productContext.scope.kind !== 'product' && salaryBoard.rows.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Salaries — {monthLabel(monthKey)}</CardTitle>
@@ -468,6 +470,9 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
             <CardDescription>
               Loans taken from financers and spend on borrowed credit cards, minus what
               we&apos;ve paid back. All-time.
+              {productContext.scope.kind !== 'all'
+                ? ` Counting ${scopeText} entries only — card repayments are company-level, so switch to ${productContext.companyShort} · all products for the real balance.`
+                : ''}
               {totalOwed > 0 ? (
                 <span className="ml-1 font-medium text-foreground">
                   Total {formatInr(totalOwed)}.
@@ -530,8 +535,9 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
           <CardHeader>
             <CardTitle className="text-base">Accounts</CardTitle>
             <CardDescription>
-              Balance = opening + money in − money out (all-time). This month&apos;s flow
-              alongside.
+              {productContext.scope.kind === 'all'
+                ? "Balance = opening + money in − money out (all-time). This month's flow alongside."
+                : `Accounts and cards belong to ${productContext.companyShort}. The figure is what ${scopeText} moved through each, all-time.`}
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -361,19 +361,31 @@ export async function loadFinanceSummary(
     else bucket.cashOut += row.amount;
     accountFlow.set(row.accountId, bucket);
   }
-  const accountTotals: FinanceAccountTotal[] = accounts.map((account) => {
-    const flow = accountFlow.get(account.id) ?? { cashIn: 0, cashOut: 0 };
-    const allTime = allRows.filter((r) => r.accountId === account.id);
-    return {
-      accountId: account.id,
-      name: account.name,
-      type: account.type,
-      ownerName: account.ownerParty?.name ?? null,
-      cashIn: Math.round(flow.cashIn * 100) / 100,
-      cashOut: Math.round(flow.cashOut * 100) / 100,
-      balance: computeAccountBalance(account.openingBalance, allTime),
-    };
-  });
+  const accountTotals: FinanceAccountTotal[] = accounts
+    // Scoped view: an account only belongs in the list if this product /
+    // company-level scope actually moved money through it. The opening
+    // balance is the company's, so a scoped "balance" would be a lie —
+    // we report the scope's own net instead.
+    .filter(
+      (account) =>
+        scope.kind === 'all' || allRows.some((r) => r.accountId === account.id),
+    )
+    .map((account) => {
+      const flow = accountFlow.get(account.id) ?? { cashIn: 0, cashOut: 0 };
+      const allTime = allRows.filter((r) => r.accountId === account.id);
+      return {
+        accountId: account.id,
+        name: account.name,
+        type: account.type,
+        ownerName: account.ownerParty?.name ?? null,
+        cashIn: Math.round(flow.cashIn * 100) / 100,
+        cashOut: Math.round(flow.cashOut * 100) / 100,
+        balance:
+          scope.kind === 'all'
+            ? computeAccountBalance(account.openingBalance, allTime)
+            : computeAccountBalance(0, allTime),
+      };
+    });
 
   // -- Outstanding (all-time) ---------------------------------------------------
   const outstanding: FinanceOutstanding[] = [];
