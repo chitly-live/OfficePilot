@@ -7,7 +7,7 @@
  *     consistent, financing categories identified)
  *   • money formatting (Indian grouping, negatives, non-finite input)
  *   • UTC date helpers (parse, month range, month shifting, labels)
- *   • ledger maths: totals, per-category grouping, "kitna dena hai"
+ *   • ledger maths: totals, per-category grouping, outstanding balances
  *     party balances (loans + borrowed cards), account balances
  */
 

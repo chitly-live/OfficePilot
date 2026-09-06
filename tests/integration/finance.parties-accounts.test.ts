@@ -7,7 +7,7 @@
  *   GET/PATCH/DEL /api/finance/accounts/[id]
  *   GET           /api/finance/summary
  *
- * The important behaviour here is the "kitna dena hai" balance: a
+ * The important behaviour here is the outstanding balance: a
  * financer is owed loans minus repayments; a card owner is owed the
  * spend routed through their card minus what we settled with them.
  */

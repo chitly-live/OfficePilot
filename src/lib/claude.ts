@@ -156,7 +156,7 @@ Rules:
 - Be direct. No fluff like "consider exploring".
 - Reference specific numbers from the data.
 - If trend is flat (<5% change), say so clearly; don't manufacture insights.
-- Hindi+English mix is fine if natural ("Reels engagement 18% up hai, but reply rate down"). Default English.`;
+- Write in English only. No Hindi or Hinglish.`;
 
 // ---------------------------------------------------------------------------
 // Validation

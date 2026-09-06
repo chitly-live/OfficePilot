@@ -10,7 +10,7 @@
  *   • Categories are either OPERATING (they count towards income and
  *     expense) or FINANCING (loan in / loan repayment / card settlement —
  *     cash moves but it is not profit or loss).
- *   • Party balances answer "kitna dena hai": a FINANCER is owed what they
+ *   • Party balances answer what we owe: a FINANCER is owed what they
  *     lent minus what we repaid; a CARD_OWNER is owed what we spent on
  *     their card minus what we settled with them.
  *

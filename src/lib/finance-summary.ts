@@ -201,7 +201,7 @@ async function loadAllRows(
 
 /**
  * Balance for every party from the full ledger. Used by the parties
- * list so "kitna dena hai" is visible without opening each party.
+ * list so the outstanding balance is visible without opening each party.
  */
 export async function loadPartyBalances(
   db: FinanceDbClient,

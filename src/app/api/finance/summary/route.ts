@@ -3,7 +3,7 @@
  *
  * Income / expense / net for the window, category breakdowns, top
  * parties, per-account flow + balance, all-time outstanding balances
- * ("kitna dena hai"), a 6-month trend and the most recent rows. Defaults
+ * (what we owe), a 6-month trend and the most recent rows. Defaults
  * to the current UTC month. Admin-only.
  */
 

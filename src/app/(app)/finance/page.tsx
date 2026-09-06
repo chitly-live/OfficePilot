@@ -1,6 +1,6 @@
 /**
  * `/finance` — monthly overview: income, expense, net, category
- * breakdown, "kitna dena hai" (outstanding to financers / card owners),
+ * breakdown, outstanding balances (owed to financers / card owners),
  * account balances, 6-month trend and the latest ledger rows.
  *
  * Admin-only (middleware + the redirect below). `?month=YYYY-MM` picks
@@ -466,7 +466,7 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Kitna dena hai — outstanding</CardTitle>
+            <CardTitle className="text-base">Outstanding — what we owe</CardTitle>
             <CardDescription>
               Loans taken from financers and spend on borrowed credit cards, minus what
               we&apos;ve paid back. All-time.

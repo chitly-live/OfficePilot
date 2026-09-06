@@ -1,6 +1,6 @@
 /**
  * `GET  /api/finance/parties` — people / companies we transact with, each
- *                                with an all-time balance ("kitna dena hai").
+ *                                with an all-time outstanding balance.
  * `POST /api/finance/parties` — create one.
  *
  * Admin-only.
