@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 
 import { auth } from '@/lib/auth';
+import { canManageFinance, canViewFinance } from '@/lib/permissions';
 import { prisma } from '@/lib/db';
 import {
   FINANCE_PARTY_TYPE_SHORT,
@@ -84,9 +85,10 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
   if (!session?.userId) {
     redirect('/login?callbackUrl=/finance');
   }
-  if (session.role !== 'ADMIN') {
+  if (!canViewFinance(session.role)) {
     redirect('/dashboard');
   }
+  const canEdit = canManageFinance(session.role);
 
   const rawMonth = coerceParam(searchParams?.month);
   const monthKey =
@@ -140,18 +142,22 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
               product={scopeValue(productContext.scope)}
               productLabel={scopeText}
             />
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/finance/transactions/new?direction=IN&month=${monthKey}`}>
-                <ArrowDownLeft className="h-4 w-4" aria-hidden="true" />
-                <span>Money in</span>
-              </Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link href={`/finance/transactions/new?direction=OUT&month=${monthKey}`}>
-                <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-                <span>Money out</span>
-              </Link>
-            </Button>
+            {canEdit ? (
+              <>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/finance/transactions/new?direction=IN&month=${monthKey}`}>
+                    <ArrowDownLeft className="h-4 w-4" aria-hidden="true" />
+                    <span>Money in</span>
+                  </Link>
+                </Button>
+                <Button asChild size="sm">
+                  <Link href={`/finance/transactions/new?direction=OUT&month=${monthKey}`}>
+                    <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+                    <span>Money out</span>
+                  </Link>
+                </Button>
+              </>
+            ) : null}
           </div>
         }
       />
@@ -447,7 +453,7 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
                         tone={salaryTone[row.status]}
                         label={SALARY_STATUS_LABELS[row.status]}
                       />
-                      {row.status !== 'PAID' ? (
+                      {canEdit && row.status !== 'PAID' ? (
                         <Button asChild size="sm" variant="outline">
                           <Link href={payHref}>Pay</Link>
                         </Button>
@@ -543,9 +549,11 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
                 title="No accounts yet"
                 description="Add your bank, cash, UPI and any borrowed credit cards to track balances."
                 action={
-                  <Button asChild variant="outline" size="sm">
-                    <Link href="/finance/accounts">Add account</Link>
-                  </Button>
+                  canEdit ? (
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/finance/accounts">Add account</Link>
+                    </Button>
+                  ) : undefined
                 }
                 className="py-8"
               />

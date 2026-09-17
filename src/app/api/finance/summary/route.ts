@@ -14,7 +14,7 @@ import {
   BadRequestError,
   errorResponse,
   parseSearchParams,
-  requireAdminSession,
+  requireFinanceReadSession,
 } from '@/lib/api-helpers';
 import { monthRange, toMonthKey } from '@/lib/finance';
 import { loadFinanceSummary } from '@/lib/finance-summary';
@@ -27,7 +27,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    await requireAdminSession();
+    await requireFinanceReadSession();
     const query = parseSearchParams(
       req.nextUrl.searchParams,
       financeSummaryQuerySchema,

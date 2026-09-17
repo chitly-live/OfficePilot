@@ -49,6 +49,8 @@ export interface AccountsTableProps {
   /** When set (e.g. "Arrows Go"), the balance / card columns are replaced by
    *  that scope's money in / out through each account. */
   scopeLabel?: string | null;
+  /** Accountant view: hide the edit / delete controls. */
+  readOnly?: boolean;
 }
 
 function DeleteAccountCell({ account }: { account: AccountRow }) {
@@ -96,7 +98,7 @@ function DeleteAccountCell({ account }: { account: AccountRow }) {
   );
 }
 
-export function AccountsTable({ items, parties, emptyAction, scopeLabel }: AccountsTableProps) {
+export function AccountsTable({ items, parties, emptyAction, scopeLabel, readOnly = false }: AccountsTableProps) {
   const scoped = Boolean(scopeLabel);
   const columns = React.useMemo<DataTableColumn<AccountRow>[]>(
     () => [
@@ -295,28 +297,32 @@ export function AccountsTable({ items, parties, emptyAction, scopeLabel }: Accou
                 Ledger
               </Link>
             </Button>
-            <AccountDialog
-              mode="edit"
-              account={{
-                id: row.original.id,
-                name: row.original.name,
-                type: row.original.type,
-                ownerPartyId: row.original.ownerPartyId,
-                openingBalance: row.original.openingBalance,
-                notes: row.original.notes,
-                isActive: row.original.isActive,
-                creditLimit: row.original.creditLimit,
-                billingDay: row.original.billingDay,
-                dueDay: row.original.dueDay,
-              }}
-              parties={parties}
-            />
-            <DeleteAccountCell account={row.original} />
+            {readOnly ? null : (
+              <>
+                <AccountDialog
+                  mode="edit"
+                  account={{
+                    id: row.original.id,
+                    name: row.original.name,
+                    type: row.original.type,
+                    ownerPartyId: row.original.ownerPartyId,
+                    openingBalance: row.original.openingBalance,
+                    notes: row.original.notes,
+                    isActive: row.original.isActive,
+                    creditLimit: row.original.creditLimit,
+                    billingDay: row.original.billingDay,
+                    dueDay: row.original.dueDay,
+                  }}
+                  parties={parties}
+                />
+                <DeleteAccountCell account={row.original} />
+              </>
+            )}
           </div>
         ),
       },
     ],
-    [parties, scoped, scopeLabel],
+    [parties, scoped, scopeLabel, readOnly],
   );
 
   return (

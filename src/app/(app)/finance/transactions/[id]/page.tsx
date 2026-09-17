@@ -8,6 +8,7 @@ import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 
 import { auth } from '@/lib/auth';
+import { canManageFinance } from '@/lib/permissions';
 import { prisma } from '@/lib/db';
 import { loadProducts } from '@/lib/products-server';
 import {
@@ -58,8 +59,9 @@ export default async function TransactionDetailPage({ params }: PageProps) {
   if (!session?.userId) {
     redirect(`/login?callbackUrl=/finance/transactions/${params.id}`);
   }
-  if (session.role !== 'ADMIN') {
-    redirect('/dashboard');
+  if (!canManageFinance(session.role)) {
+    // Accountants can look at the ledger, not change it.
+    redirect(session.role === 'ACCOUNTANT' ? '/finance/transactions' : '/dashboard');
   }
 
   const [row, partyRows, accountRows, productRows] = await Promise.all([

@@ -70,6 +70,8 @@ interface NavItem {
   icon: LucideIcon;
   /** When true, only ADMIN sessions see this entry. */
   adminOnly?: boolean;
+  /** Explicit role list (overrides `adminOnly`). */
+  roles?: Role[];
   /** Per-module gate (`canAccessModule`). When omitted, the item is
    *  always visible to any authenticated session (e.g. Settings). */
   module?: ModuleId;
@@ -83,7 +85,7 @@ const PRIMARY_NAV: NavItem[] = [
   { href: '/marketing', label: 'Marketing', icon: Megaphone, module: 'marketing' },
   { href: '/social', label: 'Social', icon: Share2, module: 'social' },
   { href: '/dev', label: 'Dev', icon: Code2, module: 'dev' },
-  { href: '/finance', label: 'Finance', icon: Wallet, adminOnly: true },
+  { href: '/finance', label: 'Finance', icon: Wallet, roles: ['ADMIN', 'ACCOUNTANT'] },
   { href: '/ai', label: 'AI Analysis', icon: Sparkles, adminOnly: true },
 ];
 
@@ -214,10 +216,13 @@ export function Sidebar({ role, moduleAccess, onNavigate }: SidebarProps) {
   const accessUser = { role, moduleAccess: moduleAccess ?? [] };
 
   const visiblePrimary = PRIMARY_NAV.filter((item) => {
+    if (item.roles) return item.roles.includes(role);
     if (item.adminOnly) return isAdmin;
     if (!item.module) return true;
     return canAccessModule(accessUser, item.module);
   });
+  // Accountants have nothing to configure — Settings is admin/employee only.
+  const visibleSecondary = role === 'ACCOUNTANT' ? [] : SECONDARY_NAV;
 
   return (
     <div className="flex h-full flex-col gap-4 px-3 py-4">
@@ -238,10 +243,10 @@ export function Sidebar({ role, moduleAccess, onNavigate }: SidebarProps) {
           ))}
         </ul>
 
-        <Separator className="my-3" />
+        {visibleSecondary.length > 0 ? <Separator className="my-3" /> : null}
 
         <ul className="flex flex-col gap-0.5">
-          {SECONDARY_NAV.map((item) => (
+          {visibleSecondary.map((item) => (
             <li key={item.href}>
               <NavLink
                 item={item}

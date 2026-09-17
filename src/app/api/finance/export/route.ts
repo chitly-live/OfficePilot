@@ -16,7 +16,7 @@ import {
   BadRequestError,
   errorResponse,
   parseSearchParams,
-  requireAdminSession,
+  requireFinanceReadSession,
 } from '@/lib/api-helpers';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
 import { prisma } from '@/lib/db';
@@ -50,7 +50,7 @@ const CONTENT_TYPES = {
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const session = await requireAdminSession();
+    const session = await requireFinanceReadSession();
     const query = parseSearchParams(req.nextUrl.searchParams, exportQuerySchema);
 
     const window = resolveReportWindow({

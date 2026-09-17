@@ -86,10 +86,17 @@ const ADMIN_ONLY_PATH_PREFIXES = [
   '/api/settings',
   '/ai',
   '/api/ai/usage',
-  // Finance module (v0.1.5) — money ledger is admin-only for now.
-  '/finance',
-  '/api/finance',
+  // Product management (the switcher itself is server-rendered).
+  '/api/products',
 ] as const;
+
+/**
+ * Finance module — ADMIN and ACCOUNTANT. Accountants are read-only:
+ * any non-GET call under `/api/finance` is refused here as well as in
+ * the route handlers, and they are confined to these prefixes (every
+ * other page bounces to `/finance`).
+ */
+const FINANCE_PATH_PREFIXES = ['/finance', '/api/finance'] as const;
 
 function hasPrefix(pathname: string, prefixes: readonly string[]): boolean {
   for (const prefix of prefixes) {
@@ -159,6 +166,30 @@ export default auth((req) => {
       return jsonError(403, 'Forbidden');
     }
     return NextResponse.redirect(new URL('/dashboard', nextUrl.origin));
+  }
+
+  // 3a. Finance gate — ADMIN or ACCOUNTANT only.
+  if (hasPrefix(pathname, FINANCE_PATH_PREFIXES)) {
+    const role = session?.role;
+    if (role !== 'ADMIN' && role !== 'ACCOUNTANT') {
+      if (isApiPath(pathname)) {
+        return jsonError(403, 'Forbidden');
+      }
+      return NextResponse.redirect(new URL('/dashboard', nextUrl.origin));
+    }
+    if (role === 'ACCOUNTANT' && isApiPath(pathname) && req.method !== 'GET') {
+      return jsonError(403, 'Read-only access');
+    }
+  }
+
+  // 3b. Accountants are confined to Finance. Anything else (pages or
+  //     APIs) is out of scope for them; pages land on /finance so a
+  //     stale bookmark or the default post-login redirect still works.
+  if (session?.role === 'ACCOUNTANT' && !hasPrefix(pathname, FINANCE_PATH_PREFIXES)) {
+    if (isApiPath(pathname)) {
+      return jsonError(403, 'Forbidden');
+    }
+    return NextResponse.redirect(new URL('/finance', nextUrl.origin));
   }
 
   // 4. Per-module access gate for EMPLOYEE users.

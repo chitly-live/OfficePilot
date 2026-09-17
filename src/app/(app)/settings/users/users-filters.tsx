@@ -137,6 +137,7 @@ export function UsersFilters({
           <option value="all">All roles</option>
           <option value="ADMIN">Admin</option>
           <option value="EMPLOYEE">Employee</option>
+          <option value="ACCOUNTANT">Accountant</option>
         </select>
       </div>
 

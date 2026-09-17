@@ -74,6 +74,9 @@ export default async function DashboardPage() {
   if (!session?.userId) {
     redirect('/login?callbackUrl=/dashboard');
   }
+  if (session.role === 'ACCOUNTANT') {
+    redirect('/finance');
+  }
 
   // ------------------------------------------------------------------
   // 2. Parallel data fetch — one Promise.all so TTFB == slowest loader.

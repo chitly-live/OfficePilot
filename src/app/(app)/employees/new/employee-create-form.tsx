@@ -406,6 +406,7 @@ export function EmployeeCreateForm() {
                   <SelectContent>
                     <SelectItem value={Role.EMPLOYEE}>Employee</SelectItem>
                     <SelectItem value={Role.ADMIN}>Admin</SelectItem>
+                    <SelectItem value={Role.ACCOUNTANT}>Accountant (Finance, read-only)</SelectItem>
                   </SelectContent>
                 </Select>
                 <FormMessage />

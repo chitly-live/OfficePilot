@@ -6,6 +6,7 @@
 import { redirect } from 'next/navigation';
 
 import { auth } from '@/lib/auth';
+import { canManageFinance, canViewFinance } from '@/lib/permissions';
 import { prisma } from '@/lib/db';
 import { formatInr } from '@/lib/finance';
 import { loadCardOverview } from '@/lib/finance-cards';
@@ -34,9 +35,10 @@ export default async function AccountsPage() {
   if (!session?.userId) {
     redirect('/login?callbackUrl=/finance/accounts');
   }
-  if (session.role !== 'ADMIN') {
+  if (!canViewFinance(session.role)) {
     redirect('/dashboard');
   }
+  const canEdit = canManageFinance(session.role);
 
   const productContext = await getProductContext(prisma);
   const scope = productContext.scope;
@@ -101,7 +103,7 @@ export default async function AccountsPage() {
             ? "Where the money sits — and which cards we've borrowed."
             : `${scopeText} — accounts and cards are company-level; this shows only what ${scopeText} moved through each.`
         }
-        actions={<AccountDialog mode="create" parties={parties} />}
+        actions={canEdit ? <AccountDialog mode="create" parties={parties} /> : undefined}
       />
 
       <FinanceNav />
@@ -131,7 +133,8 @@ export default async function AccountsPage() {
         items={items}
         parties={parties}
         scopeLabel={scope.kind === 'all' ? null : scopeText}
-        emptyAction={<AccountDialog mode="create" parties={parties} />}
+        readOnly={!canEdit}
+        emptyAction={canEdit ? <AccountDialog mode="create" parties={parties} /> : undefined}
       />
     </div>
   );

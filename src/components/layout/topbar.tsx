@@ -48,6 +48,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import { ROLE_LABELS } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 
 import { QuickAddModal } from './quick-add-modal';
@@ -80,7 +81,7 @@ function getInitials(name: string | null | undefined, email: string): string {
  * surfaces sentence case for readability.
  */
 function formatRole(role: Role): string {
-  return role === 'ADMIN' ? 'Admin' : 'Employee';
+  return ROLE_LABELS[role] ?? role;
 }
 
 // ---------------------------------------------------------------------------
@@ -162,7 +163,7 @@ export function Topbar({ user, productSwitcher }: TopbarProps) {
 
       {/* Quick-add — opens the cross-page modal that creates a Lead,
           Campaign, Social post, or Dev task from any page (SPEC §9.2.5). */}
-      <QuickAddModal currentUserId={user.id} />
+      {user.role === 'ACCOUNTANT' ? null : <QuickAddModal currentUserId={user.id} />}
 
       {/* User menu. */}
       <DropdownMenu>

@@ -11,6 +11,9 @@ datasource db {
 enum Role {
   ADMIN
   EMPLOYEE
+  /// Read-only Finance access: every finance page + report download, no writes,
+  /// no other module. Meant for the external accountant.
+  ACCOUNTANT
 }
 
 enum LeadStatus {

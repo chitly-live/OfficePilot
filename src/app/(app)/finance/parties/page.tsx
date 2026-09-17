@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation';
 import { FinancePartyType, Prisma } from '@prisma/client';
 
 import { auth } from '@/lib/auth';
+import { canManageFinance, canViewFinance } from '@/lib/permissions';
 import { prisma } from '@/lib/db';
 import { formatInr } from '@/lib/finance';
 import { loadPartyBalances } from '@/lib/finance-summary';
@@ -49,9 +50,10 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
   if (!session?.userId) {
     redirect('/login?callbackUrl=/finance/parties');
   }
-  if (session.role !== 'ADMIN') {
+  if (!canViewFinance(session.role)) {
     redirect('/dashboard');
   }
+  const canEdit = canManageFinance(session.role);
 
   const rawParams: Record<string, string> = {};
   if (searchParams) {
@@ -143,7 +145,7 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
             ? 'Financers, card owners, hosts, vendors, clients — and what we owe each.'
             : `${scopeText} — only parties with entries in this scope; balances count those entries alone.`
         }
-        actions={<PartyDialog mode="create" />}
+        actions={canEdit ? <PartyDialog mode="create" /> : undefined}
       />
 
       <FinanceNav />
@@ -164,7 +166,7 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
         showInactive={showInactive}
       />
 
-      <PartiesTable items={items} emptyAction={<PartyDialog mode="create" />} />
+      <PartiesTable items={items} emptyAction={canEdit ? <PartyDialog mode="create" /> : undefined} />
 
       <Pagination
         page={query.page}

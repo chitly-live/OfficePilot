@@ -41,12 +41,13 @@
 
 import { NextResponse } from 'next/server';
 import { ZodError, type ZodSchema } from 'zod';
-import { Prisma } from '@prisma/client';
+import { Prisma, type Role } from '@prisma/client';
 
 import { auth } from '@/lib/auth';
 import {
   assertCan,
   PermissionError,
+  canViewFinance,
   type Action,
   type OwnedRecord,
   type PermissionSession,
@@ -66,7 +67,7 @@ import {
  */
 export interface AuthenticatedSession {
   userId: string;
-  role: 'ADMIN' | 'EMPLOYEE';
+  role: Role;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +144,19 @@ export async function requireAdminSession(): Promise<AuthenticatedSession> {
     // Re-use the canonical PermissionError so the 403 path is uniform
     // across "wrong role" and "doesn't own this record" failures.
     throw new PermissionError('admin', 'user');
+  }
+  return session;
+}
+
+/**
+ * Finance read access: ADMIN or ACCOUNTANT. Use on every `GET` under
+ * `/api/finance` (lists, detail, summary, export). Writes keep
+ * {@link requireAdminSession}.
+ */
+export async function requireFinanceReadSession(): Promise<AuthenticatedSession> {
+  const session = await requireSession();
+  if (!canViewFinance(session.role)) {
+    throw new PermissionError('read', 'setting');
   }
   return session;
 }

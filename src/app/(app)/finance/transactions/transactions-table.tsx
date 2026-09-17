@@ -30,12 +30,15 @@ export interface TransactionsTableProps {
   showParty?: boolean;
   /** Prefilled "new" link for the empty state. */
   newHref?: string;
+  /** Accountant view: no edit links, no "new" action. */
+  readOnly?: boolean;
 }
 
 export function TransactionsTable({
   items,
   showParty = true,
   newHref = '/finance/transactions/new',
+  readOnly = false,
 }: TransactionsTableProps) {
   const columns = React.useMemo<DataTableColumn<FinanceTransactionPublic>[]>(
     () => {
@@ -60,12 +63,18 @@ export function TransactionsTable({
               FINANCE_CATEGORY_META[t.category].label;
             return (
               <div className="min-w-0 max-w-xs">
-                <Link
-                  href={`/finance/transactions/${t.id}`}
-                  className="block truncate text-sm font-medium text-foreground hover:underline"
-                >
-                  {primary}
-                </Link>
+                {readOnly ? (
+                  <span className="block truncate text-sm font-medium text-foreground">
+                    {primary}
+                  </span>
+                ) : (
+                  <Link
+                    href={`/finance/transactions/${t.id}`}
+                    className="block truncate text-sm font-medium text-foreground hover:underline"
+                  >
+                    {primary}
+                  </Link>
+                )}
                 {t.reference ? (
                   <div className="truncate font-mono text-[11px] text-muted-foreground">
                     {t.reference}
@@ -210,7 +219,7 @@ export function TransactionsTable({
 
       return cols;
     },
-    [showParty],
+    [showParty, readOnly],
   );
 
   return (
@@ -223,7 +232,7 @@ export function TransactionsTable({
         title: 'No transactions',
         description:
           'Nothing matches these filters. Record money in or out to start the ledger.',
-        action: (
+        action: readOnly ? undefined : (
           <Button asChild size="sm">
             <Link href={newHref}>
               <Plus className="h-4 w-4" aria-hidden="true" />

@@ -16,6 +16,7 @@ import {
   errorResponse,
   parseJsonBody,
   requireAdminSession,
+  requireFinanceReadSession,
 } from '@/lib/api-helpers';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
 import { categoryDirection, categoryLabel } from '@/lib/finance';
@@ -38,7 +39,7 @@ export async function GET(
   context: RouteContext,
 ): Promise<NextResponse> {
   try {
-    await requireAdminSession();
+    await requireFinanceReadSession();
     const { id } = context.params;
 
     const row = await prisma.financeTransaction.findUnique({

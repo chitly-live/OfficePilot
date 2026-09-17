@@ -155,7 +155,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // back to `[]` so the DB state stays clean and the field's "ADMIN
     // ignores this column" invariant is enforced at the write site.
     const moduleAccess =
-      input.role === 'ADMIN' ? [] : (input.moduleAccess ?? []);
+      input.role === 'ADMIN' || input.role === 'ACCOUNTANT' ? [] : (input.moduleAccess ?? []);
 
     const user = await prisma.user.create({
       data: {

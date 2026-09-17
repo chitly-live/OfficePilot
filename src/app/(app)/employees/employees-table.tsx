@@ -25,6 +25,8 @@ import { format } from 'date-fns';
 import { UserPlus, Users } from 'lucide-react';
 import type { Role } from '@prisma/client';
 
+import { ROLE_LABELS } from '@/lib/permissions';
+
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -115,6 +117,7 @@ export interface EmployeesTableProps {
 const ROLE_TONE: Partial<Record<Role, 'green' | 'blue' | 'neutral'>> = {
   ADMIN: 'blue',
   EMPLOYEE: 'neutral',
+  ACCOUNTANT: 'green',
 };
 
 export function EmployeesTable({ items }: EmployeesTableProps) {
@@ -160,7 +163,7 @@ export function EmployeesTable({ items }: EmployeesTableProps) {
           <StatusBadge<Role>
             status={row.original.role}
             toneMap={ROLE_TONE}
-            label={row.original.role === 'ADMIN' ? 'Admin' : 'Employee'}
+            label={ROLE_LABELS[row.original.role]}
           />
         ),
       },

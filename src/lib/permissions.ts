@@ -5,9 +5,11 @@
  * property-based tests (see SPEC.md §16.1 Property 7).
  *
  * Authoritative rules (see SPEC.md §2.1 and design.md "Components and Interfaces"):
- *   • ADMIN    → full access to every resource and action.
- *   • EMPLOYEE → read all modules; write only records they own or created;
- *                cannot delete, cannot manage users, cannot see AI cost/usage.
+ *   • ADMIN      → full access to every resource and action.
+ *   • EMPLOYEE   → read all modules; write only records they own or created;
+ *                  cannot delete, cannot manage users, cannot see AI cost/usage.
+ *   • ACCOUNTANT → Finance only, read-only (pages + Excel/PDF export). Every
+ *                  other resource / module is denied; see {@link canViewFinance}.
  *
  * Resources cover the 6 modules + Settings:
  *   user, lead, campaign, socialPost, devTask, aiInsight, setting.
@@ -338,17 +340,48 @@ export const MODULE_API_PREFIXES: Array<readonly [ModuleId, string]> = [
  */
 export function canAccessModule(
   user:
-    | { role: 'ADMIN' | 'EMPLOYEE'; moduleAccess?: string[] | null }
+    | { role: Role; moduleAccess?: string[] | null }
     | null
     | undefined,
   moduleId: ModuleId,
 ): boolean {
   if (!user) return false;
   if (user.role === 'ADMIN') return true;
+  // Accountants live in Finance only — none of the employee modules.
+  if (user.role === 'ACCOUNTANT') return false;
   // Backward compat: legacy employees with empty moduleAccess see all
   // modules. Once an admin sets ANY value (even a single module), the
   // list becomes the exhaustive whitelist.
   const list = user.moduleAccess ?? [];
   if (list.length === 0) return true;
   return list.includes(moduleId);
+}
+
+// ---------------------------------------------------------------------------
+// Finance module (admin + accountant)
+// ---------------------------------------------------------------------------
+
+/** Roles that may open the Finance module and download its reports. */
+export const FINANCE_VIEW_ROLES: readonly Role[] = ['ADMIN', 'ACCOUNTANT'] as const;
+
+/** Can this role see Finance pages and export the report? */
+export function canViewFinance(role: Role | null | undefined): boolean {
+  return role !== null && role !== undefined && FINANCE_VIEW_ROLES.includes(role);
+}
+
+/** Can this role add / edit / delete ledger rows, parties, accounts, products? */
+export function canManageFinance(role: Role | null | undefined): boolean {
+  return role === 'ADMIN';
+}
+
+/** User-facing role labels. */
+export const ROLE_LABELS: Record<Role, string> = {
+  ADMIN: 'Admin',
+  EMPLOYEE: 'Employee',
+  ACCOUNTANT: 'Accountant',
+};
+
+/** Where a freshly signed-in user of this role should land. */
+export function homePathForRole(role: Role | null | undefined): string {
+  return role === 'ACCOUNTANT' ? '/finance' : '/dashboard';
 }

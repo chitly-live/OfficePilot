@@ -9,6 +9,7 @@ import { notFound, redirect } from 'next/navigation';
 import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Mail, Phone } from 'lucide-react';
 
 import { auth } from '@/lib/auth';
+import { canManageFinance, canViewFinance } from '@/lib/permissions';
 import { prisma } from '@/lib/db';
 import {
   FINANCE_ACCOUNT_TYPE_LABELS,
@@ -66,9 +67,10 @@ export default async function PartyDetailPage({ params }: PageProps) {
   if (!session?.userId) {
     redirect(`/login?callbackUrl=/finance/parties/${params.id}`);
   }
-  if (session.role !== 'ADMIN') {
+  if (!canViewFinance(session.role)) {
     redirect('/dashboard');
   }
+  const canEdit = canManageFinance(session.role);
 
   const productContext = await getProductContext(prisma);
   const scope = productContext.scope;
@@ -210,12 +212,12 @@ export default async function PartyDetailPage({ params }: PageProps) {
                 <span>Back</span>
               </Link>
             </Button>
-            {party.userId ? (
+            {canEdit && party.userId ? (
               <Button asChild variant="outline" size="sm">
                 <Link href={`/employees/${party.userId}`}>Employee profile</Link>
               </Button>
             ) : null}
-            {quickLinks.map((q) => {
+            {(canEdit ? quickLinks : []).map((q) => {
               const Icon = q.icon;
               return (
                 <Button
@@ -231,8 +233,12 @@ export default async function PartyDetailPage({ params }: PageProps) {
                 </Button>
               );
             })}
-            <PartyDialog mode="edit" party={party} />
-            <DeletePartyButton partyId={party.id} partyName={party.name} />
+            {canEdit ? (
+              <>
+                <PartyDialog mode="edit" party={party} />
+                <DeletePartyButton partyId={party.id} partyName={party.name} />
+              </>
+            ) : null}
           </div>
         }
       />
@@ -297,6 +303,7 @@ export default async function PartyDetailPage({ params }: PageProps) {
                 items={ledger}
                 showParty={false}
                 newHref={quickLinks[0]?.href ?? `${newBase}&direction=OUT`}
+                readOnly={!canEdit}
               />
             </CardContent>
           </Card>

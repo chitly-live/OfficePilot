@@ -14,6 +14,7 @@ import {
   errorResponse,
   parseJsonBody,
   requireAdminSession,
+  requireFinanceReadSession,
 } from '@/lib/api-helpers';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
 import { loadPartyBalance } from '@/lib/finance-summary';
@@ -35,7 +36,7 @@ export async function GET(
   context: RouteContext,
 ): Promise<NextResponse> {
   try {
-    await requireAdminSession();
+    await requireFinanceReadSession();
     const { id } = context.params;
 
     const party = await prisma.financeParty.findUnique({

@@ -277,8 +277,9 @@ export async function PATCH(
     const previousModuleAccess = existing.moduleAccess;
     let nextModuleAccess: string[] | undefined;
 
-    if (effectiveRole === 'ADMIN') {
-      // Admin: force `[]`. If the row is already `[]` we still let
+    if (effectiveRole === 'ADMIN' || effectiveRole === 'ACCOUNTANT') {
+      // Admin / accountant: force `[]` (the whitelist is meaningless for
+      // either). If the row is already `[]` we still let
       // Prisma write the no-op — the diff check below handles
       // not-logging-a-changed-event in that case.
       nextModuleAccess = [];

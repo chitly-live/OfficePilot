@@ -384,6 +384,7 @@ export function EmployeeProfileForm({
                   <SelectContent>
                     <SelectItem value={Role.EMPLOYEE}>Employee</SelectItem>
                     <SelectItem value={Role.ADMIN}>Admin</SelectItem>
+                    <SelectItem value={Role.ACCOUNTANT}>Accountant (Finance, read-only)</SelectItem>
                   </SelectContent>
                 </Select>
                 {!isAdmin ? (
@@ -487,13 +488,15 @@ export function EmployeeProfileForm({
           entirely for non-admin sessions (self-edit can't reach here).
         */}
         {isAdmin ? (
-          watchedRole === Role.ADMIN ? (
+          watchedRole === Role.ADMIN || watchedRole === Role.ACCOUNTANT ? (
             <div
               role="note"
               className="rounded-md border border-dashed border-input bg-muted/30 px-3 py-2 text-sm text-muted-foreground"
             >
               <span className="font-medium text-foreground">Module access:</span>{' '}
-              All modules (admins see everything).
+              {watchedRole === Role.ADMIN
+                ? 'All modules (admins see everything).'
+                : 'Finance only, read-only — can view every finance page and download the Excel / PDF report, cannot add or change anything.'}
             </div>
           ) : (
             <FormField

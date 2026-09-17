@@ -12,6 +12,7 @@ import { ArrowLeft } from 'lucide-react';
 import { FinanceCategory, FinanceDirection } from '@prisma/client';
 
 import { auth } from '@/lib/auth';
+import { canManageFinance } from '@/lib/permissions';
 import { prisma } from '@/lib/db';
 import { getProductContext } from '@/lib/products-server';
 import { Button } from '@/components/ui/button';
@@ -53,8 +54,9 @@ export default async function NewTransactionPage({
   if (!session?.userId) {
     redirect('/login?callbackUrl=/finance/transactions/new');
   }
-  if (session.role !== 'ADMIN') {
-    redirect('/dashboard');
+  if (!canManageFinance(session.role)) {
+    // Accountants can look at the ledger, not change it.
+    redirect(session.role === 'ACCOUNTANT' ? '/finance/transactions' : '/dashboard');
   }
 
   const rawDirection = coerceParam(searchParams?.direction);

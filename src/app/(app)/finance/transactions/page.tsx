@@ -11,6 +11,7 @@ import { redirect } from 'next/navigation';
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 
 import { auth } from '@/lib/auth';
+import { canManageFinance, canViewFinance } from '@/lib/permissions';
 import { prisma } from '@/lib/db';
 import { formatInr, monthLabel, summarizeRows, toMonthKey } from '@/lib/finance';
 import { scopeLabel, scopeValue } from '@/lib/products';
@@ -61,9 +62,10 @@ export default async function TransactionsPage({
   if (!session?.userId) {
     redirect('/login?callbackUrl=/finance/transactions');
   }
-  if (session.role !== 'ADMIN') {
+  if (!canViewFinance(session.role)) {
     redirect('/dashboard');
   }
+  const canEdit = canManageFinance(session.role);
 
   const rawParams: Record<string, string> = {};
   if (searchParams) {
@@ -157,18 +159,22 @@ export default async function TransactionsPage({
               product={scopeValue(productContext.scope)}
               productLabel={scopeText}
             />
-            <Button asChild variant="outline" size="sm">
-              <Link href={`${newHrefBase}&direction=IN`}>
-                <ArrowDownLeft className="h-4 w-4" aria-hidden="true" />
-                <span>Money in</span>
-              </Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link href={`${newHrefBase}&direction=OUT`}>
-                <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-                <span>Money out</span>
-              </Link>
-            </Button>
+            {canEdit ? (
+              <>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`${newHrefBase}&direction=IN`}>
+                    <ArrowDownLeft className="h-4 w-4" aria-hidden="true" />
+                    <span>Money in</span>
+                  </Link>
+                </Button>
+                <Button asChild size="sm">
+                  <Link href={`${newHrefBase}&direction=OUT`}>
+                    <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+                    <span>Money out</span>
+                  </Link>
+                </Button>
+              </>
+            ) : null}
           </div>
         }
       />
@@ -218,6 +224,7 @@ export default async function TransactionsPage({
       <TransactionsTable
         items={items as unknown as FinanceTransactionPublic[]}
         newHref={`${newHrefBase}&direction=OUT`}
+        readOnly={!canEdit}
       />
 
       <Pagination

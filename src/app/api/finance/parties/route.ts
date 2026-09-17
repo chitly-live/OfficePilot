@@ -15,6 +15,7 @@ import {
   parseJsonBody,
   parseSearchParams,
   requireAdminSession,
+  requireFinanceReadSession,
 } from '@/lib/api-helpers';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
 import { loadPartyBalances } from '@/lib/finance-summary';
@@ -30,7 +31,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    await requireAdminSession();
+    await requireFinanceReadSession();
     const query = parseSearchParams(
       req.nextUrl.searchParams,
       financePartyListQuerySchema,

@@ -23,9 +23,13 @@ import {
   PermissionError,
   RESOURCES,
   RESOURCE_ACTIONS,
+  ROLE_LABELS,
   assertCan,
   can,
   canAccessModule,
+  canManageFinance,
+  canViewFinance,
+  homePathForRole,
   type Action,
   type ModuleId,
   type OwnedRecord,
@@ -703,5 +707,47 @@ describe('canAccessModule() — runtime safety for unknown moduleId casts', () =
   it('unknown moduleId is allowed for ADMIN (bypass short-circuits)', () => {
     const user = { role: 'ADMIN' as const, moduleAccess: ['leads'] };
     expect(canAccessModule(user, 'bogus' as ModuleId)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ACCOUNTANT — Finance only, read-only
+// ---------------------------------------------------------------------------
+
+describe('Accountant role', () => {
+  it('is denied every resource/action in can()', () => {
+    const session = { userId: 'acc-1', role: 'ACCOUNTANT' as const };
+    for (const { resource, action } of RESOURCE_ACTIONS) {
+      expect(can(session, action, resource, { ownerId: 'acc-1', createdById: 'acc-1' })).toBe(false);
+    }
+  });
+
+  it('cannot access any employee module, even with an empty whitelist', () => {
+    for (const moduleId of ALL_EMPLOYEE_MODULES) {
+      expect(canAccessModule({ role: 'ACCOUNTANT', moduleAccess: [] }, moduleId)).toBe(false);
+      expect(canAccessModule({ role: 'ACCOUNTANT', moduleAccess: [moduleId] }, moduleId)).toBe(false);
+    }
+  });
+
+  it('can view Finance but not manage it; admin can do both; employee neither', () => {
+    expect(canViewFinance('ACCOUNTANT')).toBe(true);
+    expect(canManageFinance('ACCOUNTANT')).toBe(false);
+    expect(canViewFinance('ADMIN')).toBe(true);
+    expect(canManageFinance('ADMIN')).toBe(true);
+    expect(canViewFinance('EMPLOYEE')).toBe(false);
+    expect(canManageFinance('EMPLOYEE')).toBe(false);
+    expect(canViewFinance(null)).toBe(false);
+    expect(canViewFinance(undefined)).toBe(false);
+  });
+
+  it('lands on /finance after sign-in; everyone else on /dashboard', () => {
+    expect(homePathForRole('ACCOUNTANT')).toBe('/finance');
+    expect(homePathForRole('ADMIN')).toBe('/dashboard');
+    expect(homePathForRole('EMPLOYEE')).toBe('/dashboard');
+    expect(homePathForRole(undefined)).toBe('/dashboard');
+  });
+
+  it('has a label', () => {
+    expect(ROLE_LABELS.ACCOUNTANT).toBe('Accountant');
   });
 });
