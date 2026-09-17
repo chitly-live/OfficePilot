@@ -99,6 +99,53 @@ describe('ACCOUNTANT — can read everything in Finance', () => {
   });
 });
 
+describe('ACCOUNTANT — party contacts are masked', () => {
+  it('phone shows the last two digits, email the first three characters; admin sees all', async () => {
+    const { user: admin } = await createTestUser({ role: 'ADMIN' });
+    const party = await prisma.financeParty.create({
+      data: {
+        name: 'TINKAL ANANDRAO WANKAR',
+        type: 'WORKER',
+        phone: '+919673072005',
+        email: 'twinklwnkr@gmail.com',
+        createdById: admin.id,
+      },
+    });
+
+    await asAccountant();
+    const list = await getJson<{ items: Array<{ id: string; phone: string; email: string }> }>(
+      await listParties(buildJsonRequest('GET', `${FIN}/parties`)),
+    );
+    const row = list!.items.find((i) => i.id === party.id)!;
+    expect(row.phone).toBe('+XXXXXXXXXX05');
+    expect(row.email).toBe('twi***@***.com');
+
+    const detail = await getJson<{ phone: string; email: string }>(
+      await getParty(buildJsonRequest('GET', `${FIN}/parties/${party.id}`), buildRouteContext(party.id)),
+    );
+    expect(detail!.phone).toBe('+XXXXXXXXXX05');
+    expect(detail!.email).toBe('twi***@***.com');
+
+    // Searching by digits / email must not find anything for an accountant…
+    const probe = await getJson<{ items: unknown[] }>(
+      await listParties(buildJsonRequest('GET', `${FIN}/parties?search=9673`)),
+    );
+    expect(probe!.items).toHaveLength(0);
+    // …but by name still works.
+    const byName = await getJson<{ items: unknown[] }>(
+      await listParties(buildJsonRequest('GET', `${FIN}/parties?search=tinkal`)),
+    );
+    expect(byName!.items).toHaveLength(1);
+
+    await setSession({ userId: admin.id, role: 'ADMIN' });
+    const full = await getJson<{ phone: string; email: string }>(
+      await getParty(buildJsonRequest('GET', `${FIN}/parties/${party.id}`), buildRouteContext(party.id)),
+    );
+    expect(full!.phone).toBe('+919673072005');
+    expect(full!.email).toBe('twinklwnkr@gmail.com');
+  });
+});
+
 describe('ACCOUNTANT — cannot change anything', () => {
   it('finance writes are 403 and leave the ledger untouched', async () => {
     const { party, account, txn } = await seed();

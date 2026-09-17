@@ -9,6 +9,7 @@ import { notFound, redirect } from 'next/navigation';
 import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Mail, Phone } from 'lucide-react';
 
 import { auth } from '@/lib/auth';
+import { maskContacts } from '@/lib/mask';
 import { canManageFinance, canViewFinance } from '@/lib/permissions';
 import { prisma } from '@/lib/db';
 import {
@@ -132,7 +133,7 @@ export default async function PartyDetailPage({ params }: PageProps) {
       .sort((a, b) => b.paidTo + b.receivedFrom - (a.paidTo + a.receivedFrom));
   })();
 
-  const party = partyRow as unknown as FinancePartyPublic;
+  const party = maskContacts(partyRow as unknown as FinancePartyPublic, session.role);
   const balance = await loadPartyBalance(prisma, party.id, scope);
   const passThrough = computePassThrough(routedRows, party.id);
   const ledger = ledgerRows as unknown as FinanceTransactionPublic[];

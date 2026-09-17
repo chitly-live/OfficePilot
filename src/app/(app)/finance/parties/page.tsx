@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation';
 import { FinancePartyType, Prisma } from '@prisma/client';
 
 import { auth } from '@/lib/auth';
+import { maskContacts, shouldMaskContacts } from '@/lib/mask';
 import { canManageFinance, canViewFinance } from '@/lib/permissions';
 import { prisma } from '@/lib/db';
 import { formatInr } from '@/lib/finance';
@@ -94,11 +95,13 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
   if (query.type && query.type.length > 0) where.type = { in: query.type };
   if (!showInactive) where.isActive = true;
   if (query.search) {
-    where.OR = [
-      { name: { contains: query.search, mode: 'insensitive' } },
-      { phone: { contains: query.search, mode: 'insensitive' } },
-      { email: { contains: query.search, mode: 'insensitive' } },
-    ];
+    where.OR = shouldMaskContacts(session.role)
+      ? [{ name: { contains: query.search, mode: 'insensitive' } }]
+      : [
+          { name: { contains: query.search, mode: 'insensitive' } },
+          { phone: { contains: query.search, mode: 'insensitive' } },
+          { email: { contains: query.search, mode: 'insensitive' } },
+        ];
   }
 
   const skip = (query.page - 1) * query.pageSize;
@@ -115,7 +118,7 @@ export default async function PartiesPage({ searchParams }: PartiesPageProps) {
 
   const balances = await loadPartyBalances(prisma, undefined, scope);
   const items: PartyRow[] = rows.map((p) => ({
-    ...(p as unknown as FinancePartyPublic),
+    ...maskContacts(p as unknown as FinancePartyPublic, session.role),
     balance: balances.get(p.id) ?? null,
   }));
 

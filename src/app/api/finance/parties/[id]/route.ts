@@ -18,6 +18,7 @@ import {
 } from '@/lib/api-helpers';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
 import { loadPartyBalance } from '@/lib/finance-summary';
+import { maskContacts } from '@/lib/mask';
 import {
   financePartyProjection,
   financePartyUpdateSchema,
@@ -36,7 +37,7 @@ export async function GET(
   context: RouteContext,
 ): Promise<NextResponse> {
   try {
-    await requireFinanceReadSession();
+    const session = await requireFinanceReadSession();
     const { id } = context.params;
 
     const party = await prisma.financeParty.findUnique({
@@ -49,7 +50,7 @@ export async function GET(
 
     const balance = await loadPartyBalance(prisma, id);
     return NextResponse.json({
-      ...(party as unknown as FinancePartyPublic),
+      ...maskContacts(party as unknown as FinancePartyPublic, session.role),
       balance,
     });
   } catch (err) {

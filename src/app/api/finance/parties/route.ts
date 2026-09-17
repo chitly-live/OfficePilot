@@ -19,6 +19,7 @@ import {
 } from '@/lib/api-helpers';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
 import { loadPartyBalances } from '@/lib/finance-summary';
+import { maskContacts, shouldMaskContacts } from '@/lib/mask';
 import {
   financePartyCreateSchema,
   financePartyListQuerySchema,
@@ -31,7 +32,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    await requireFinanceReadSession();
+    const session = await requireFinanceReadSession();
     const query = parseSearchParams(
       req.nextUrl.searchParams,
       financePartyListQuerySchema,
@@ -41,11 +42,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (query.type && query.type.length > 0) where.type = { in: query.type };
     if (query.isActive !== undefined) where.isActive = query.isActive;
     if (query.search) {
-      where.OR = [
-        { name: { contains: query.search, mode: 'insensitive' } },
-        { phone: { contains: query.search, mode: 'insensitive' } },
-        { email: { contains: query.search, mode: 'insensitive' } },
-      ];
+      where.OR = shouldMaskContacts(session.role)
+        ? [{ name: { contains: query.search, mode: 'insensitive' } }]
+        : [
+            { name: { contains: query.search, mode: 'insensitive' } },
+            { phone: { contains: query.search, mode: 'insensitive' } },
+            { email: { contains: query.search, mode: 'insensitive' } },
+          ];
     }
 
     const skip = (query.page - 1) * query.pageSize;
@@ -67,7 +70,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({
       items: items.map((p) => ({
-        ...(p as unknown as FinancePartyPublic),
+        ...maskContacts(p as unknown as FinancePartyPublic, session.role),
         balance: balances.get(p.id) ?? null,
       })),
       total,
