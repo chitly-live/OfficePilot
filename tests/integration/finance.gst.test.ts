@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { GET as listReturns, POST as createReturn } from '@/app/api/finance/gst/route';
 import { DELETE as deleteReturn, PATCH as patchReturn } from '@/app/api/finance/gst/[id]/route';
 import { prisma } from '@/lib/db';
-import { GST_PARTY_NAME, defaultGstPaymentDate } from '@/lib/gst';
+import { GST_PARTY_NAME, defaultGstPaymentDate, itcRunningBalances } from '@/lib/gst';
 
 import {
   buildJsonRequest,
@@ -54,6 +54,7 @@ describe('POST /api/finance/gst', () => {
     const res = await createReturn(
       buildJsonRequest('POST', BASE, {
         month: '2026-08',
+        itcClaimed: 21000,
         itcUsed: 18012,
         cashPaid: 4279,
         paidOn: '2026-09-17',
@@ -74,11 +75,25 @@ describe('POST /api/finance/gst', () => {
     ]);
     expect(rows[0].date.toISOString()).toBe('2026-09-17T00:00:00.000Z');
 
-    const list = await getJson<{ items: Array<{ month: string }>; totals: { itcUsed: number; cashPaid: number } }>(
-      await listReturns(),
-    );
-    expect(list!.items.map((i) => i.month)).toEqual(['2026-08']);
-    expect(list!.totals).toEqual({ itcUsed: 18012, cashPaid: 4279 });
+    const list = await getJson<{
+      items: Array<{ month: string; itcClaimed: number; itcBalance: number }>;
+      totals: { itcClaimed: number; itcUsed: number; cashPaid: number; itcBalance: number };
+    }>(await listReturns());
+    expect(list!.items.map((i) => [i.month, i.itcClaimed, i.itcBalance])).toEqual([['2026-08', 21000, 2988]]);
+    expect(list!.totals).toEqual({ itcClaimed: 21000, itcUsed: 18012, cashPaid: 4279, itcBalance: 2988 });
+    // ITC claimed never becomes a ledger row.
+    expect(await prisma.financeTransaction.count()).toBe(2);
+  });
+
+  it('a claim-only month writes no ledger row but seeds the ITC balance', async () => {
+    await asRole('ACCOUNTANT');
+    expect((await createReturn(buildJsonRequest('POST', BASE, { month: '2026-06', itcClaimed: 5000 }))).status).toBe(201);
+    expect((await createReturn(buildJsonRequest('POST', BASE, { month: '2026-07', itcClaimed: 4000, itcUsed: 6000 }))).status).toBe(201);
+    expect(await prisma.financeTransaction.count()).toBe(1);
+    const rows = await prisma.gstReturn.findMany({ select: { month: true, itcClaimed: true, itcUsed: true } });
+    const bal = itcRunningBalances(rows);
+    expect(bal.get('2026-06')).toBe(5000);
+    expect(bal.get('2026-07')).toBe(3000);
   });
 
   it('ITC-only return: one row, dated the 20th of the next month; duplicate month is 409', async () => {
@@ -146,7 +161,7 @@ describe('PATCH / DELETE /api/finance/gst/[id]', () => {
     rows = await taxRows();
     expect(rows.map((r) => r.amount)).toEqual([20000]);
 
-    // Cannot zero both.
+    // Cannot zero everything.
     expect(
       (
         await patchReturn(
@@ -155,6 +170,16 @@ describe('PATCH / DELETE /api/finance/gst/[id]', () => {
         )
       ).status,
     ).toBe(400);
+    // …unless a claim keeps the month meaningful.
+    expect(
+      (
+        await patchReturn(
+          buildJsonRequest('PATCH', `${BASE}/${created!.id}`, { itcUsed: 0, itcClaimed: 1500 }),
+          buildRouteContext(created!.id),
+        )
+      ).status,
+    ).toBe(200);
+    expect(await prisma.financeTransaction.count({ where: { category: 'TAX' } })).toBe(0);
   });
 
   it('delete is admin-only and removes both ledger rows', async () => {

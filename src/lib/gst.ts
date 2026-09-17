@@ -146,3 +146,20 @@ export async function deleteGstLedgerRows(
     await tx.financeTransaction.deleteMany({ where: { id: { in: list } } });
   }
 }
+
+/**
+ * Running input-tax-credit balance after each month, oldest first:
+ * previous balance + claimed − used. Months are sorted by key so callers
+ * can pass rows in any order.
+ */
+export function itcRunningBalances<T extends { month: string; itcClaimed: number; itcUsed: number }>(
+  rows: readonly T[],
+): Map<string, number> {
+  const out = new Map<string, number>();
+  let balance = 0;
+  for (const r of [...rows].sort((a, b) => a.month.localeCompare(b.month))) {
+    balance = Math.round((balance + r.itcClaimed - r.itcUsed) * 100) / 100;
+    out.set(r.month, balance);
+  }
+  return out;
+}

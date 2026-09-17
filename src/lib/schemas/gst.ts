@@ -30,6 +30,8 @@ const shortText = z.string().trim().max(120);
 const longText = z.string().trim().max(2000);
 
 const base = {
+  /** ITC claimed this period (credit earned; no cash, no ledger row). */
+  itcClaimed: rupees.default(0),
   itcUsed: rupees.default(0),
   cashPaid: rupees.default(0),
   paidOn: dateField.nullable().optional(),
@@ -41,8 +43,8 @@ const base = {
 
 export const gstReturnCreateSchema = z
   .object({ month: gstMonthField, ...base })
-  .refine((v) => v.itcUsed > 0 || v.cashPaid > 0, {
-    message: 'Enter the ITC used, the cash paid, or both',
+  .refine((v) => v.itcClaimed > 0 || v.itcUsed > 0 || v.cashPaid > 0, {
+    message: 'Enter at least one amount: ITC claimed, ITC used or cash paid',
     path: ['cashPaid'],
   });
 
@@ -50,6 +52,7 @@ export type GstReturnCreateInput = z.infer<typeof gstReturnCreateSchema>;
 
 export const gstReturnUpdateSchema = z
   .object({
+    itcClaimed: rupees.optional(),
     itcUsed: rupees.optional(),
     cashPaid: rupees.optional(),
     paidOn: dateField.nullable().optional(),
@@ -64,6 +67,7 @@ export type GstReturnUpdateInput = z.infer<typeof gstReturnUpdateSchema>;
 export const gstReturnProjection = {
   id: true,
   month: true,
+  itcClaimed: true,
   itcUsed: true,
   cashPaid: true,
   paidOn: true,
@@ -82,6 +86,7 @@ export const gstReturnProjection = {
 export type GstReturnPublic = {
   id: string;
   month: string;
+  itcClaimed: number;
   itcUsed: number;
   cashPaid: number;
   paidOn: Date | null;

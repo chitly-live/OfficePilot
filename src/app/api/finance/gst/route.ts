@@ -18,7 +18,7 @@ import {
 } from '@/lib/api-helpers';
 import { prisma } from '@/lib/db';
 import { monthLabel } from '@/lib/finance';
-import { syncGstLedgerRows } from '@/lib/gst';
+import { itcRunningBalances, syncGstLedgerRows } from '@/lib/gst';
 import { gstReturnCreateSchema, gstReturnProjection, type GstReturnPublic } from '@/lib/schemas/gst';
 
 export const runtime = 'nodejs';
@@ -32,10 +32,21 @@ export async function GET(): Promise<NextResponse> {
       orderBy: [{ month: 'desc' }],
     });
     const totals = items.reduce(
-      (acc, r) => ({ itcUsed: acc.itcUsed + r.itcUsed, cashPaid: acc.cashPaid + r.cashPaid }),
-      { itcUsed: 0, cashPaid: 0 },
+      (acc, r) => ({
+        itcClaimed: acc.itcClaimed + r.itcClaimed,
+        itcUsed: acc.itcUsed + r.itcUsed,
+        cashPaid: acc.cashPaid + r.cashPaid,
+      }),
+      { itcClaimed: 0, itcUsed: 0, cashPaid: 0 },
     );
-    return NextResponse.json({ items: items as unknown as GstReturnPublic[], totals });
+    const balances = itcRunningBalances(items);
+    return NextResponse.json({
+      items: (items as unknown as GstReturnPublic[]).map((r) => ({
+        ...r,
+        itcBalance: balances.get(r.month) ?? 0,
+      })),
+      totals: { ...totals, itcBalance: Math.round((totals.itcClaimed - totals.itcUsed) * 100) / 100 },
+    });
   } catch (err) {
     return errorResponse(err);
   }
@@ -75,6 +86,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         return tx.gstReturn.create({
           data: {
             ...figures,
+            itcClaimed: input.itcClaimed,
             notes: input.notes ?? null,
             ...rows,
             createdById: session.userId,
@@ -100,6 +112,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         entityId: created.id,
         metadata: {
           entityName: monthLabel(created.month),
+          itcClaimed: created.itcClaimed,
           itcUsed: created.itcUsed,
           cashPaid: created.cashPaid,
         },

@@ -56,6 +56,7 @@ const money = z
 const formSchema = z
   .object({
     month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Pick a month'),
+    itcClaimed: money,
     itcUsed: money,
     cashPaid: money,
     paidOn: z.string().refine((v) => v === '' || /^\d{4}-\d{2}-\d{2}$/.test(v), 'Invalid date'),
@@ -63,10 +64,10 @@ const formSchema = z
     reference: z.string().trim().max(120),
     notes: z.string().trim().max(2000),
   })
-  .refine((v) => Number(v.itcUsed || 0) > 0 || Number(v.cashPaid || 0) > 0, {
-    message: 'Enter the ITC used, the cash paid, or both',
-    path: ['cashPaid'],
-  });
+  .refine(
+    (v) => Number(v.itcClaimed || 0) > 0 || Number(v.itcUsed || 0) > 0 || Number(v.cashPaid || 0) > 0,
+    { message: 'Enter at least one amount', path: ['cashPaid'] },
+  );
 
 type FormValues = z.infer<typeof formSchema>;
 
@@ -92,6 +93,7 @@ export function GstDialog({ mode, gstReturn, accounts, defaultMonth, trigger }: 
   const defaults = React.useCallback(
     (): FormValues => ({
       month: gstReturn?.month ?? defaultMonth ?? '',
+      itcClaimed: gstReturn && gstReturn.itcClaimed > 0 ? String(gstReturn.itcClaimed) : '',
       itcUsed: gstReturn && gstReturn.itcUsed > 0 ? String(gstReturn.itcUsed) : '',
       cashPaid: gstReturn && gstReturn.cashPaid > 0 ? String(gstReturn.cashPaid) : '',
       paidOn: toDateInputValue(gstReturn?.paidOn ?? null),
@@ -107,6 +109,7 @@ export function GstDialog({ mode, gstReturn, accounts, defaultMonth, trigger }: 
     defaultValues: defaults(),
   });
   const isSubmitting = form.formState.isSubmitting;
+  const claimed = Number(form.watch('itcClaimed') || 0);
   const itc = Number(form.watch('itcUsed') || 0);
   const cash = Number(form.watch('cashPaid') || 0);
 
@@ -117,6 +120,7 @@ export function GstDialog({ mode, gstReturn, accounts, defaultMonth, trigger }: 
 
   async function onSubmit(values: FormValues) {
     const payload: Record<string, unknown> = {
+      itcClaimed: values.itcClaimed === '' ? 0 : Number(values.itcClaimed),
       itcUsed: values.itcUsed === '' ? 0 : Number(values.itcUsed),
       cashPaid: values.cashPaid === '' ? 0 : Number(values.cashPaid),
       paidOn: values.paidOn === '' ? null : values.paidOn,
@@ -164,9 +168,10 @@ export function GstDialog({ mode, gstReturn, accounts, defaultMonth, trigger }: 
         <DialogHeader>
           <DialogTitle>{mode === 'create' ? 'Record a GST return' : 'Edit GST return'}</DialogTitle>
           <DialogDescription>
-            How this month&apos;s GST was settled. Saving writes the figures into the ledger
-            under Government (GST): the cash part against the account you pick, the ITC part
-            without any account.
+            Two things happen every month: input tax credit is claimed on purchase bills, and
+            the GST due is paid — partly by using that credit, the rest in cash. Saving writes
+            the paid figures into the ledger under Government (GST); the claim only moves the
+            ITC balance.
           </DialogDescription>
         </DialogHeader>
 
@@ -187,17 +192,38 @@ export function GstDialog({ mode, gstReturn, accounts, defaultMonth, trigger }: 
               )}
             />
 
+            <FormField
+              control={form.control}
+              name="itcClaimed"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>ITC claimed this month (₹)</FormLabel>
+                  <FormControl>
+                    <Input inputMode="decimal" placeholder="21000" disabled={isSubmitting} {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    Credit earned on purchase bills (ads, software, CA…). Adds to the ITC balance; no
+                    cash moves and nothing is written to the ledger.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              GST paid for this month
+            </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField
                 control={form.control}
                 name="itcUsed"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>ITC used (₹)</FormLabel>
+                    <FormLabel>Paid by ITC (₹)</FormLabel>
                     <FormControl>
                       <Input inputMode="decimal" placeholder="18012" disabled={isSubmitting} {...field} />
                     </FormControl>
-                    <FormDescription>Input tax credit set off. No cash moves.</FormDescription>
+                    <FormDescription>Set off against the ITC balance. No cash moves.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -207,20 +233,35 @@ export function GstDialog({ mode, gstReturn, accounts, defaultMonth, trigger }: 
                 name="cashPaid"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Cash paid (₹)</FormLabel>
+                    <FormLabel>Paid in cash (₹)</FormLabel>
                     <FormControl>
                       <Input inputMode="decimal" placeholder="4279" disabled={isSubmitting} {...field} />
                     </FormControl>
-                    <FormDescription>Paid through the GST portal.</FormDescription>
+                    <FormDescription>Paid through the GST portal from a bank / card.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
 
-            <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
-              Total GST for the month:{' '}
-              <span className="font-semibold tabular-nums">{formatInr(itc + cash)}</span>
+            <div className="grid gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm sm:grid-cols-2">
+              <div>
+                Total GST paid:{' '}
+                <span className="font-semibold tabular-nums">{formatInr(itc + cash)}</span>
+              </div>
+              <div>
+                ITC change this month:{' '}
+                <span
+                  className={
+                    claimed - itc >= 0
+                      ? 'font-semibold tabular-nums text-status-green'
+                      : 'font-semibold tabular-nums text-status-red'
+                  }
+                >
+                  {claimed - itc >= 0 ? '+' : '−'}
+                  {formatInr(Math.abs(claimed - itc))}
+                </span>
+              </div>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">

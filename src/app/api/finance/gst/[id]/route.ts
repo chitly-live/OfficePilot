@@ -53,8 +53,9 @@ export async function PATCH(req: NextRequest, context: RouteContext): Promise<Ne
         input.cashAccountId !== undefined ? input.cashAccountId : existing.cashAccountId,
       reference: input.reference !== undefined ? input.reference : existing.reference,
     };
-    if (figures.itcUsed <= 0 && figures.cashPaid <= 0) {
-      throw new BadRequestError('Enter the ITC used, the cash paid, or both');
+    const itcClaimed = input.itcClaimed ?? existing.itcClaimed;
+    if (itcClaimed <= 0 && figures.itcUsed <= 0 && figures.cashPaid <= 0) {
+      throw new BadRequestError('Enter at least one amount: ITC claimed, ITC used or cash paid');
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -71,6 +72,7 @@ export async function PATCH(req: NextRequest, context: RouteContext): Promise<Ne
         where: { id },
         data: {
           ...figures,
+          itcClaimed,
           ...(input.notes !== undefined ? { notes: input.notes } : {}),
           ...rows,
         },

@@ -595,10 +595,13 @@ model GstReturn {
   /// `YYYY-MM` — the tax period the return covers.
   month String @unique
 
+  /// Input tax credit claimed this period from purchase bills (INR). Adds to
+  /// the credit ledger; no cash moves and no ledger row is written.
+  itcClaimed Float @default(0)
   /// Portion of the liability set off against input tax credit (INR).
-  itcUsed  Float @default(0)
+  itcUsed    Float @default(0)
   /// Portion paid in cash through the GST portal (INR).
-  cashPaid Float @default(0)
+  cashPaid   Float @default(0)
 
   /// Date the cash was paid / the return was filed.
   paidOn        DateTime?

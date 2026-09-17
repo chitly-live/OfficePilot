@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "GstReturn" ADD COLUMN     "itcClaimed" DOUBLE PRECISION NOT NULL DEFAULT 0;
+
