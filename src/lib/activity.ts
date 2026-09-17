@@ -150,6 +150,10 @@ export const ACTIVITY_ACTIONS = {
   /** Excel / PDF report download. Metadata: `period`, `format`. */
   FINANCE_REPORT_EXPORTED: 'finance.report_exported',
 
+  // GST returns (monthly, entered by the accountant)
+  GST_RETURN_SAVED: 'finance.gst_return_saved',
+  GST_RETURN_DELETED: 'finance.gst_return_deleted',
+
   // Products (business lines under the company)
   PRODUCT_CREATED: 'product.created',
   PRODUCT_UPDATED: 'product.updated',
@@ -682,6 +686,10 @@ export function formatActivity(activity: FormattableActivity): string {
       return `${userName} updated finance account ${entityName}`;
     case ACTIVITY_ACTIONS.FINANCE_ACCOUNT_DELETED:
       return `${userName} deleted finance account ${entityName}`;
+    case ACTIVITY_ACTIONS.GST_RETURN_SAVED:
+      return `${userName} saved the GST return for ${entityName}`;
+    case ACTIVITY_ACTIONS.GST_RETURN_DELETED:
+      return `${userName} deleted the GST return for ${entityName}`;
     case ACTIVITY_ACTIONS.PRODUCT_CREATED:
       return `${userName} added product ${entityName}`;
     case ACTIVITY_ACTIONS.PRODUCT_UPDATED:

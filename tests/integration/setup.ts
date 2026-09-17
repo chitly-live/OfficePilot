@@ -91,6 +91,7 @@ const dbModulePromise = import('@/lib/db');
 /** Tables we touch from any route handler the integration suite tests. */
 const TABLES_TO_TRUNCATE = [
   'PasswordResetToken',
+  'GstReturn',
   'FinanceTransaction',
   'Product',
   'FinanceAccount',

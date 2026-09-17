@@ -8,7 +8,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowLeftRight, LayoutDashboard, Landmark, Users } from 'lucide-react';
+import { ArrowLeftRight, LayoutDashboard, Landmark, ReceiptText, Users } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -17,6 +17,7 @@ const ITEMS = [
   { href: '/finance/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { href: '/finance/parties', label: 'Parties', icon: Users },
   { href: '/finance/accounts', label: 'Accounts', icon: Landmark },
+  { href: '/finance/gst', label: 'GST', icon: ReceiptText },
 ] as const;
 
 export function FinanceNav() {

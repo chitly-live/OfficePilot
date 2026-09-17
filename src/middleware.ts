@@ -177,7 +177,13 @@ export default auth((req) => {
       }
       return NextResponse.redirect(new URL('/dashboard', nextUrl.origin));
     }
-    if (role === 'ACCOUNTANT' && isApiPath(pathname) && req.method !== 'GET') {
+    // Accountants may write exactly one thing: the monthly GST return.
+    if (
+      role === 'ACCOUNTANT' &&
+      isApiPath(pathname) &&
+      req.method !== 'GET' &&
+      !matchesPrefix(pathname, '/api/finance/gst')
+    ) {
       return jsonError(403, 'Read-only access');
     }
   }

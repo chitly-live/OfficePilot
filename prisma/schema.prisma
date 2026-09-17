@@ -90,33 +90,33 @@ enum Priority {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  role         Role     @default(EMPLOYEE)
-  phone        String?
-  designation  String?
-  joinedAt     DateTime @default(now())
-  isActive     Boolean  @default(true)
-  avatarUrl    String?
+  id                String    @id @default(cuid())
+  email             String    @unique
+  passwordHash      String
+  name              String
+  role              Role      @default(EMPLOYEE)
+  phone             String?
+  designation       String?
+  joinedAt          DateTime  @default(now())
+  isActive          Boolean   @default(true)
+  avatarUrl         String?
   // Per-module access list for EMPLOYEE role users (v0.1.3 / FEATURE-A).
   // Empty array = legacy/default = all employee-accessible modules visible
   // (backward compat). Admins ignore this field — they always see all
   // modules. Module IDs: 'dashboard', 'employees', 'leads', 'marketing',
   // 'social', 'dev'. ('ai' and 'settings/users' are admin-only regardless.)
-  moduleAccess String[] @default([])
+  moduleAccess      String[]  @default([])
   // Set whenever the password changes (self-service reset or admin edit).
   // The JWT callback compares it with the session's sign-in time so a
   // password reset signs every other device out within ~5 minutes.
   passwordChangedAt DateTime?
   /// Agreed monthly pay (salary or stipend), INR. Admin-only field; used by
   /// the Finance module to show paid / pending per month.
-  monthlySalary Float?
+  monthlySalary     Float?
   /// Free label shown next to the amount, e.g. "Intern stipend", "Salary".
-  salaryLabel   String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  salaryLabel       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   ownedLeads          Lead[]               @relation("LeadOwner")
   createdLeads        Lead[]               @relation("LeadCreator")
@@ -129,6 +129,7 @@ model User {
   attendance          Attendance[]
   financeParties      FinanceParty[]       @relation("FinancePartyCreator")
   financeTransactions FinanceTransaction[] @relation("FinanceTransactionCreator")
+  gstReturns          GstReturn[]          @relation("GstReturnCreator")
   passwordResetTokens PasswordResetToken[]
   /// The Finance party that represents this employee (salary payouts).
   financeParty        FinanceParty?        @relation("FinancePartyUser")
@@ -491,8 +492,8 @@ model FinanceParty {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  accounts     FinanceAccount[]
-  transactions FinanceTransaction[] @relation("FinanceTransactionParty")
+  accounts           FinanceAccount[]
+  transactions       FinanceTransaction[] @relation("FinanceTransactionParty")
   /// Transactions where this party was only the intermediary the bank paid
   /// (money passed through them to the real `party`). Not part of balances.
   routedTransactions FinanceTransaction[] @relation("FinanceTransactionVia")
@@ -525,6 +526,7 @@ model FinanceAccount {
   transactions FinanceTransaction[] @relation("FinanceTransactionAccount")
   /// Card repayments that settle this card's bill (`settlesAccountId`).
   settlements  FinanceTransaction[] @relation("FinanceTransactionSettles")
+  gstReturns   GstReturn[]
 
   @@index([type])
   @@index([ownerPartyId])
@@ -545,29 +547,33 @@ model FinanceTransaction {
 
   /// The real counterparty — who the money is ultimately for / from. Drives
   /// every balance ("we owe", paid to, received from).
-  partyId   String?
-  party     FinanceParty?   @relation("FinanceTransactionParty", fields: [partyId], references: [id], onDelete: Restrict)
+  partyId          String?
+  party            FinanceParty?   @relation("FinanceTransactionParty", fields: [partyId], references: [id], onDelete: Restrict)
   /// Optional intermediary the bank actually paid, when money was routed
   /// (e.g. bank → Ritu → Shubham). Matches the bank narration; never
   /// affects balances.
-  viaPartyId String?
-  viaParty   FinanceParty?  @relation("FinanceTransactionVia", fields: [viaPartyId], references: [id], onDelete: Restrict)
-  accountId String?
-  account   FinanceAccount? @relation("FinanceTransactionAccount", fields: [accountId], references: [id], onDelete: Restrict)
+  viaPartyId       String?
+  viaParty         FinanceParty?   @relation("FinanceTransactionVia", fields: [viaPartyId], references: [id], onDelete: Restrict)
+  accountId        String?
+  account          FinanceAccount? @relation("FinanceTransactionAccount", fields: [accountId], references: [id], onDelete: Restrict)
   /// For CARD_REPAYMENT rows: which credit card's bill this payment settles.
   /// Reduces that card's outstanding / frees its limit. The party balance
   /// ("we owe the card owner") is unaffected — that is driven by `partyId`.
   settlesAccountId String?
   settlesAccount   FinanceAccount? @relation("FinanceTransactionSettles", fields: [settlesAccountId], references: [id], onDelete: Restrict)
   /// Which product this row belongs to; null = company-level (Praxxel).
-  productId String?
-  product   Product? @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productId        String?
+  product          Product?        @relation(fields: [productId], references: [id], onDelete: Restrict)
 
   createdById String
   createdBy   User   @relation("FinanceTransactionCreator", fields: [createdById], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// Set on the two TAX rows a monthly GST return generates.
+  gstReturnAsCash GstReturn? @relation("GstReturnCash")
+  gstReturnAsItc  GstReturn? @relation("GstReturnItc")
 
   @@index([date])
   @@index([direction])
@@ -577,4 +583,43 @@ model FinanceTransaction {
   @@index([accountId])
   @@index([settlesAccountId])
   @@index([productId])
+}
+
+/// One GST return per month (GSTR-3B). The accountant records how the
+/// liability was settled: input tax credit (no cash) + cash paid. Saving
+/// writes / updates two TAX rows in the ledger — the cash part against the
+/// chosen account, the ITC part with no account — so the Government (GST)
+/// party shows the full amount while cash balances stay honest.
+model GstReturn {
+  id    String @id @default(cuid())
+  /// `YYYY-MM` — the tax period the return covers.
+  month String @unique
+
+  /// Portion of the liability set off against input tax credit (INR).
+  itcUsed  Float @default(0)
+  /// Portion paid in cash through the GST portal (INR).
+  cashPaid Float @default(0)
+
+  /// Date the cash was paid / the return was filed.
+  paidOn        DateTime?
+  /// Which bank / card the cash left from. Optional — the accountant may
+  /// not know; the admin fills it in later.
+  cashAccountId String?
+  cashAccount   FinanceAccount? @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+  /// Challan / ARN / any reference.
+  reference     String?
+  notes         String?
+
+  cashTransactionId String?             @unique
+  cashTransaction   FinanceTransaction? @relation("GstReturnCash", fields: [cashTransactionId], references: [id], onDelete: SetNull)
+  itcTransactionId  String?             @unique
+  itcTransaction    FinanceTransaction? @relation("GstReturnItc", fields: [itcTransactionId], references: [id], onDelete: SetNull)
+
+  createdById String
+  createdBy   User   @relation("GstReturnCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([month])
 }
