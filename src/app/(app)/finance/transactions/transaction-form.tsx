@@ -497,7 +497,7 @@ export function TransactionForm({
           />
         </div>
 
-        {products.length > 0 ? (
+        {products.length > 1 ? (
           <FormField
             control={form.control}
             name="productId"

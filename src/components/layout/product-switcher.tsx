@@ -51,6 +51,19 @@ export function ProductSwitcher({ products, current, companyShort }: ProductSwit
     startTransition(() => router.refresh());
   }
 
+  // One product = one business. Nothing to switch, so show a plain label.
+  if (products.length <= 1) {
+    return (
+      <span
+        className="inline-flex h-8 max-w-[12rem] items-center gap-2 rounded-md border bg-muted/30 px-3 text-sm font-medium"
+        aria-label="Business"
+      >
+        {active ? <Dot color={active.color} /> : <Layers className="h-4 w-4" aria-hidden="true" />}
+        <span className="truncate">{label}</span>
+      </span>
+    );
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

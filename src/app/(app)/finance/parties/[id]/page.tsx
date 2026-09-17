@@ -105,10 +105,12 @@ export default async function PartyDetailPage({ params }: PageProps) {
       where: { ...productWhere(scope), viaPartyId: params.id },
       select: { direction: true, category: true, amount: true, viaPartyId: true },
     }),
-    loadProducts(prisma, { includeInactive: true }),
-    // Product split: rows linked to this party or made on their accounts.
+    loadProducts(prisma),
+    // Product split: rows linked to this party or made on their accounts,
+    // inside the header scope like everything else on this page.
     prisma.financeTransaction.findMany({
       where: {
+        ...productWhere(scope),
         OR: [{ partyId: params.id }, { account: { ownerPartyId: params.id } }],
       },
       select: { productId: true, direction: true, amount: true },
@@ -311,7 +313,7 @@ export default async function PartyDetailPage({ params }: PageProps) {
         </div>
 
         <aside className="space-y-4">
-          {productSplit.length > 1 || (productSplit.length === 1 && productSplit[0].productId !== null) ? (
+          {productContext.products.length > 1 && productSplit.length > 0 ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">By product</CardTitle>

@@ -95,9 +95,9 @@ export function ProductsPanel() {
   return (
     <div className="space-y-5">
       <div className="rounded-md border bg-card p-3 text-xs text-muted-foreground">
-        Products are the business lines under the company (e.g. Chitly, Arrows Go). Every
-        Finance entry can be tagged with one; employees, bank accounts, cards and salaries
-        stay company-level. Use the switcher in the top bar to view one product at a time.
+        This panel keeps the books of one business (Chitly). A second product only
+        appears in the top bar once it is added here and marked active; every Finance
+        entry then belongs to exactly one product.
       </div>
 
       <form onSubmit={add} className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
