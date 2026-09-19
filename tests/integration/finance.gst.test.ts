@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { GET as listReturns, POST as createReturn } from '@/app/api/finance/gst/route';
 import { DELETE as deleteReturn, PATCH as patchReturn } from '@/app/api/finance/gst/[id]/route';
 import { prisma } from '@/lib/db';
-import { GST_PARTY_NAME, defaultGstPaymentDate, itcRunningBalances } from '@/lib/gst';
+import { GST_PARTY_NAME, defaultGstPaymentDate, itcByHead, itcRunningBalances } from '@/lib/gst';
 
 import {
   buildJsonRequest,
@@ -124,6 +124,64 @@ describe('POST /api/finance/gst', () => {
     await asRole('EMPLOYEE');
     expect((await createReturn(buildJsonRequest('POST', BASE, { month: '2026-08', cashPaid: 1 }))).status).toBe(403);
     expect((await listReturns()).status).toBe(403);
+  });
+});
+
+describe('Head-wise (IGST / CGST / SGST) figures', () => {
+  it('totals are derived from the heads and the ledger rows follow them', async () => {
+    const card = await seedCard();
+    await asRole('ACCOUNTANT');
+
+    const res = await createReturn(
+      buildJsonRequest('POST', BASE, {
+        month: '2026-08',
+        itcClaimedIgst: 12000,
+        itcClaimedCgst: 4500,
+        itcClaimedSgst: 4500,
+        itcUsedIgst: 10000,
+        itcUsedCgst: 4006,
+        itcUsedSgst: 4006,
+        cashPaidIgst: 0,
+        cashPaidCgst: 2139.5,
+        cashPaidSgst: 2139.5,
+        cashAccountId: card.id,
+      }),
+    );
+    expect(res.status).toBe(201);
+    const body = await getJson<{ id: string; itcClaimed: number; itcUsed: number; cashPaid: number }>(res);
+    expect(body!.itcClaimed).toBe(21000);
+    expect(body!.itcUsed).toBe(18012);
+    expect(body!.cashPaid).toBe(4279);
+
+    const rows = await taxRows();
+    expect(rows.map((r) => r.amount)).toEqual([4279, 18012]);
+
+    const list = await getJson<{
+      byHead: { igst: { balance: number }; cgst: { balance: number }; sgst: { balance: number } };
+    }>(await listReturns());
+    expect(list!.byHead.igst.balance).toBe(2000);
+    expect(list!.byHead.cgst.balance).toBe(494);
+    expect(list!.byHead.sgst.balance).toBe(494);
+
+    // Editing one head re-derives the totals.
+    const patched = await patchReturn(
+      buildJsonRequest('PATCH', `${BASE}/${body!.id}`, { cashPaidIgst: 1000 }),
+      buildRouteContext(body!.id),
+    );
+    expect(patched.status).toBe(200);
+    expect((await getJson<{ cashPaid: number }>(patched))!.cashPaid).toBe(5279);
+    expect((await taxRows()).map((r) => r.amount)).toEqual([5279, 18012]);
+  });
+
+  it('itcByHead keeps the three heads separate', () => {
+    const rows = [
+      { itcClaimedIgst: 100, itcClaimedCgst: 50, itcClaimedSgst: 50, itcUsedIgst: 40, itcUsedCgst: 10, itcUsedSgst: 60 },
+      { itcClaimedIgst: 0, itcClaimedCgst: 25, itcClaimedSgst: 25, itcUsedIgst: 0, itcUsedCgst: 0, itcUsedSgst: 0 },
+    ];
+    const out = itcByHead(rows);
+    expect(out.igst).toEqual({ claimed: 100, used: 40, balance: 60 });
+    expect(out.cgst).toEqual({ claimed: 75, used: 10, balance: 65 });
+    expect(out.sgst).toEqual({ claimed: 75, used: 60, balance: 15 });
   });
 });
 

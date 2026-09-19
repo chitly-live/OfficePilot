@@ -48,6 +48,11 @@ import type { FinanceAccountType } from '@prisma/client';
 
 import { NONE_VALUE, requestJson, toDateInputValue } from '../finance-ui';
 
+/** `0` / missing → empty input, so the field shows a placeholder. */
+function amountValue(v: number | null | undefined): string {
+  return v && v > 0 ? String(v) : '';
+}
+
 const money = z
   .string()
   .trim()
@@ -56,17 +61,28 @@ const money = z
 const formSchema = z
   .object({
     month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Pick a month'),
-    itcClaimed: money,
-    itcUsed: money,
-    cashPaid: money,
+    itcClaimedIgst: money,
+    itcClaimedCgst: money,
+    itcClaimedSgst: money,
+    itcUsedIgst: money,
+    itcUsedCgst: money,
+    itcUsedSgst: money,
+    cashPaidIgst: money,
+    cashPaidCgst: money,
+    cashPaidSgst: money,
     paidOn: z.string().refine((v) => v === '' || /^\d{4}-\d{2}-\d{2}$/.test(v), 'Invalid date'),
     cashAccountId: z.string(),
     reference: z.string().trim().max(120),
     notes: z.string().trim().max(2000),
   })
   .refine(
-    (v) => Number(v.itcClaimed || 0) > 0 || Number(v.itcUsed || 0) > 0 || Number(v.cashPaid || 0) > 0,
-    { message: 'Enter at least one amount', path: ['cashPaid'] },
+    (v) =>
+      [
+        v.itcClaimedIgst, v.itcClaimedCgst, v.itcClaimedSgst,
+        v.itcUsedIgst, v.itcUsedCgst, v.itcUsedSgst,
+        v.cashPaidIgst, v.cashPaidCgst, v.cashPaidSgst,
+      ].some((n) => Number(n || 0) > 0),
+    { message: 'Enter at least one amount', path: ['cashPaidSgst'] },
   );
 
 type FormValues = z.infer<typeof formSchema>;
@@ -93,9 +109,15 @@ export function GstDialog({ mode, gstReturn, accounts, defaultMonth, trigger }: 
   const defaults = React.useCallback(
     (): FormValues => ({
       month: gstReturn?.month ?? defaultMonth ?? '',
-      itcClaimed: gstReturn && gstReturn.itcClaimed > 0 ? String(gstReturn.itcClaimed) : '',
-      itcUsed: gstReturn && gstReturn.itcUsed > 0 ? String(gstReturn.itcUsed) : '',
-      cashPaid: gstReturn && gstReturn.cashPaid > 0 ? String(gstReturn.cashPaid) : '',
+      itcClaimedIgst: amountValue(gstReturn?.itcClaimedIgst),
+      itcClaimedCgst: amountValue(gstReturn?.itcClaimedCgst),
+      itcClaimedSgst: amountValue(gstReturn?.itcClaimedSgst),
+      itcUsedIgst: amountValue(gstReturn?.itcUsedIgst),
+      itcUsedCgst: amountValue(gstReturn?.itcUsedCgst),
+      itcUsedSgst: amountValue(gstReturn?.itcUsedSgst),
+      cashPaidIgst: amountValue(gstReturn?.cashPaidIgst),
+      cashPaidCgst: amountValue(gstReturn?.cashPaidCgst),
+      cashPaidSgst: amountValue(gstReturn?.cashPaidSgst),
       paidOn: toDateInputValue(gstReturn?.paidOn ?? null),
       cashAccountId: gstReturn?.cashAccountId ?? NONE_VALUE,
       reference: gstReturn?.reference ?? '',
@@ -109,9 +131,11 @@ export function GstDialog({ mode, gstReturn, accounts, defaultMonth, trigger }: 
     defaultValues: defaults(),
   });
   const isSubmitting = form.formState.isSubmitting;
-  const claimed = Number(form.watch('itcClaimed') || 0);
-  const itc = Number(form.watch('itcUsed') || 0);
-  const cash = Number(form.watch('cashPaid') || 0);
+  const w = form.watch();
+  const n = (v: string | undefined) => Number(v || 0);
+  const claimed = n(w.itcClaimedIgst) + n(w.itcClaimedCgst) + n(w.itcClaimedSgst);
+  const itc = n(w.itcUsedIgst) + n(w.itcUsedCgst) + n(w.itcUsedSgst);
+  const cash = n(w.cashPaidIgst) + n(w.cashPaidCgst) + n(w.cashPaidSgst);
 
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
@@ -119,10 +143,17 @@ export function GstDialog({ mode, gstReturn, accounts, defaultMonth, trigger }: 
   };
 
   async function onSubmit(values: FormValues) {
+    const num = (v: string) => (v === '' ? 0 : Number(v));
     const payload: Record<string, unknown> = {
-      itcClaimed: values.itcClaimed === '' ? 0 : Number(values.itcClaimed),
-      itcUsed: values.itcUsed === '' ? 0 : Number(values.itcUsed),
-      cashPaid: values.cashPaid === '' ? 0 : Number(values.cashPaid),
+      itcClaimedIgst: num(values.itcClaimedIgst),
+      itcClaimedCgst: num(values.itcClaimedCgst),
+      itcClaimedSgst: num(values.itcClaimedSgst),
+      itcUsedIgst: num(values.itcUsedIgst),
+      itcUsedCgst: num(values.itcUsedCgst),
+      itcUsedSgst: num(values.itcUsedSgst),
+      cashPaidIgst: num(values.cashPaidIgst),
+      cashPaidCgst: num(values.cashPaidCgst),
+      cashPaidSgst: num(values.cashPaidSgst),
       paidOn: values.paidOn === '' ? null : values.paidOn,
       cashAccountId: values.cashAccountId === NONE_VALUE ? null : values.cashAccountId,
       reference: values.reference === '' ? null : values.reference,
@@ -168,10 +199,10 @@ export function GstDialog({ mode, gstReturn, accounts, defaultMonth, trigger }: 
         <DialogHeader>
           <DialogTitle>{mode === 'create' ? 'Record a GST return' : 'Edit GST return'}</DialogTitle>
           <DialogDescription>
-            Two things happen every month: input tax credit is claimed on purchase bills, and
-            the GST due is paid — partly by using that credit, the rest in cash. Saving writes
-            the paid figures into the ledger under Government (GST); the claim only moves the
-            ITC balance.
+            Enter the return head-wise, exactly as filed: IGST for inter-state, CGST + SGST for
+            intra-state. Each head shows the credit claimed that month and how the liability was
+            settled — from credit or in cash. Saving writes the paid amounts into the ledger
+            under Government (GST); the claim only moves the ITC balance.
           </DialogDescription>
         </DialogHeader>
 
@@ -192,56 +223,62 @@ export function GstDialog({ mode, gstReturn, accounts, defaultMonth, trigger }: 
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="itcClaimed"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>ITC claimed this month (₹)</FormLabel>
-                  <FormControl>
-                    <Input inputMode="decimal" placeholder="21000" disabled={isSubmitting} {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    Credit earned on purchase bills (ads, software, CA…). Adds to the ITC balance; no
-                    cash moves and nothing is written to the ledger.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              GST paid for this month
-            </p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="itcUsed"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Paid by ITC (₹)</FormLabel>
-                    <FormControl>
-                      <Input inputMode="decimal" placeholder="18012" disabled={isSubmitting} {...field} />
-                    </FormControl>
-                    <FormDescription>Set off against the ITC balance. No cash moves.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="cashPaid"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Paid in cash (₹)</FormLabel>
-                    <FormControl>
-                      <Input inputMode="decimal" placeholder="4279" disabled={isSubmitting} {...field} />
-                    </FormControl>
-                    <FormDescription>Paid through the GST portal from a bank / card.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <div className="space-y-2">
+              <div className="grid grid-cols-[3.2rem_1fr_1fr_1fr] items-end gap-2">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Head
+                </span>
+                <span className="text-xs font-medium text-muted-foreground">ITC claimed</span>
+                <span className="text-xs font-medium text-muted-foreground">Paid by ITC</span>
+                <span className="text-xs font-medium text-muted-foreground">Paid in cash</span>
+              </div>
+              {(
+                [
+                  ['igst', 'IGST', 'itcClaimedIgst', 'itcUsedIgst', 'cashPaidIgst'],
+                  ['cgst', 'CGST', 'itcClaimedCgst', 'itcUsedCgst', 'cashPaidCgst'],
+                  ['sgst', 'SGST', 'itcClaimedSgst', 'itcUsedSgst', 'cashPaidSgst'],
+                ] as const
+              ).map(([key, label, claimName, usedName, cashName]) => (
+                <div key={key} className="grid grid-cols-[3.2rem_1fr_1fr_1fr] items-center gap-2">
+                  <span className="text-sm font-medium text-foreground">{label}</span>
+                  {([claimName, usedName, cashName] as const).map((fieldName) => (
+                    <FormField
+                      key={fieldName}
+                      control={form.control}
+                      name={fieldName}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="sr-only">{`${label} ${fieldName}`}</FormLabel>
+                          <FormControl>
+                            <Input
+                              inputMode="decimal"
+                              placeholder="0"
+                              className="h-9 text-right tabular-nums"
+                              disabled={isSubmitting}
+                              {...field}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  ))}
+                </div>
+              ))}
+              <div className="grid grid-cols-[3.2rem_1fr_1fr_1fr] items-center gap-2 border-t pt-2">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Total
+                </span>
+                <span className="pr-3 text-right text-sm font-semibold tabular-nums text-status-green">
+                  {formatInr(claimed)}
+                </span>
+                <span className="pr-3 text-right text-sm font-semibold tabular-nums">
+                  {formatInr(itc)}
+                </span>
+                <span className="pr-3 text-right text-sm font-semibold tabular-nums text-status-red">
+                  {formatInr(cash)}
+                </span>
+              </div>
+              <FormMessage>{form.formState.errors.cashPaidSgst?.message}</FormMessage>
             </div>
 
             <div className="grid gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm sm:grid-cols-2">

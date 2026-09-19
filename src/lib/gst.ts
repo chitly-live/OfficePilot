@@ -163,3 +163,45 @@ export function itcRunningBalances<T extends { month: string; itcClaimed: number
   }
   return out;
 }
+
+/** Per-head ITC position: what was claimed, used and what is left. */
+export interface GstHeadPosition {
+  claimed: number;
+  used: number;
+  balance: number;
+}
+
+export type GstHeadTotals = { igst: GstHeadPosition; cgst: GstHeadPosition; sgst: GstHeadPosition };
+
+/**
+ * ITC claimed / used / balance per tax head across the given returns.
+ * Heads are kept separate because the credit ledger itself is: SGST credit
+ * can never pay a CGST liability, and vice versa.
+ */
+export function itcByHead(
+  rows: readonly {
+    itcClaimedIgst: number; itcClaimedCgst: number; itcClaimedSgst: number;
+    itcUsedIgst: number; itcUsedCgst: number; itcUsedSgst: number;
+  }[],
+): GstHeadTotals {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const build = (claimed: number, used: number): GstHeadPosition => ({
+    claimed: r2(claimed),
+    used: r2(used),
+    balance: r2(claimed - used),
+  });
+  return {
+    igst: build(
+      rows.reduce((s, r) => s + r.itcClaimedIgst, 0),
+      rows.reduce((s, r) => s + r.itcUsedIgst, 0),
+    ),
+    cgst: build(
+      rows.reduce((s, r) => s + r.itcClaimedCgst, 0),
+      rows.reduce((s, r) => s + r.itcUsedCgst, 0),
+    ),
+    sgst: build(
+      rows.reduce((s, r) => s + r.itcClaimedSgst, 0),
+      rows.reduce((s, r) => s + r.itcUsedSgst, 0),
+    ),
+  };
+}

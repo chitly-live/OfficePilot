@@ -595,6 +595,9 @@ model GstReturn {
   /// `YYYY-MM` — the tax period the return covers.
   month String @unique
 
+  /// Totals across the three tax heads. Kept denormalised because the
+  /// ledger rows, the ITC balance and every report read these.
+  ///
   /// Input tax credit claimed this period from purchase bills (INR). Adds to
   /// the credit ledger; no cash moves and no ledger row is written.
   itcClaimed Float @default(0)
@@ -602,6 +605,19 @@ model GstReturn {
   itcUsed    Float @default(0)
   /// Portion paid in cash through the GST portal (INR).
   cashPaid   Float @default(0)
+
+  /// Head-wise split as filed in GSTR-3B. IGST for inter-state, CGST + SGST
+  /// (usually equal halves) for intra-state. Each total above is the sum of
+  /// its three heads whenever the accountant fills them in.
+  itcClaimedIgst Float @default(0)
+  itcClaimedCgst Float @default(0)
+  itcClaimedSgst Float @default(0)
+  itcUsedIgst    Float @default(0)
+  itcUsedCgst    Float @default(0)
+  itcUsedSgst    Float @default(0)
+  cashPaidIgst   Float @default(0)
+  cashPaidCgst   Float @default(0)
+  cashPaidSgst   Float @default(0)
 
   /// Date the cash was paid / the return was filed.
   paidOn        DateTime?

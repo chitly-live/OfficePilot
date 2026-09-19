@@ -16,7 +16,12 @@ import {
 import { prisma } from '@/lib/db';
 import { monthLabel } from '@/lib/finance';
 import { deleteGstLedgerRows, syncGstLedgerRows } from '@/lib/gst';
-import { gstReturnProjection, gstReturnUpdateSchema, type GstReturnPublic } from '@/lib/schemas/gst';
+import {
+  gstReturnProjection,
+  gstReturnUpdateSchema,
+  withDerivedTotals,
+  type GstReturnPublic,
+} from '@/lib/schemas/gst';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,7 +49,14 @@ export async function PATCH(req: NextRequest, context: RouteContext): Promise<Ne
       if (!acct) throw new BadRequestError('Account not found');
     }
 
-    const figures = {
+    const figures: {
+      month: string;
+      itcUsed: number;
+      cashPaid: number;
+      paidOn: Date | null;
+      cashAccountId: string | null;
+      reference: string | null;
+    } = {
       month: existing.month,
       itcUsed: input.itcUsed ?? existing.itcUsed,
       cashPaid: input.cashPaid ?? existing.cashPaid,
@@ -53,7 +65,30 @@ export async function PATCH(req: NextRequest, context: RouteContext): Promise<Ne
         input.cashAccountId !== undefined ? input.cashAccountId : existing.cashAccountId,
       reference: input.reference !== undefined ? input.reference : existing.reference,
     };
-    const itcClaimed = input.itcClaimed ?? existing.itcClaimed;
+    // Merge the head-wise numbers, then re-derive the totals from them when
+    // any head carries a value (see `withDerivedTotals`).
+    const heads = {
+      itcClaimedIgst: input.itcClaimedIgst ?? existing.itcClaimedIgst,
+      itcClaimedCgst: input.itcClaimedCgst ?? existing.itcClaimedCgst,
+      itcClaimedSgst: input.itcClaimedSgst ?? existing.itcClaimedSgst,
+      itcUsedIgst: input.itcUsedIgst ?? existing.itcUsedIgst,
+      itcUsedCgst: input.itcUsedCgst ?? existing.itcUsedCgst,
+      itcUsedSgst: input.itcUsedSgst ?? existing.itcUsedSgst,
+      cashPaidIgst: input.cashPaidIgst ?? existing.cashPaidIgst,
+      cashPaidCgst: input.cashPaidCgst ?? existing.cashPaidCgst,
+      cashPaidSgst: input.cashPaidSgst ?? existing.cashPaidSgst,
+    };
+    let itcClaimed = input.itcClaimed ?? existing.itcClaimed;
+    const derived = withDerivedTotals({
+      ...heads,
+      itcClaimed,
+      itcUsed: figures.itcUsed,
+      cashPaid: figures.cashPaid,
+    });
+    itcClaimed = derived.itcClaimed;
+    figures.itcUsed = derived.itcUsed;
+    figures.cashPaid = derived.cashPaid;
+
     if (itcClaimed <= 0 && figures.itcUsed <= 0 && figures.cashPaid <= 0) {
       throw new BadRequestError('Enter at least one amount: ITC claimed, ITC used or cash paid');
     }
@@ -72,6 +107,7 @@ export async function PATCH(req: NextRequest, context: RouteContext): Promise<Ne
         where: { id },
         data: {
           ...figures,
+          ...heads,
           itcClaimed,
           ...(input.notes !== undefined ? { notes: input.notes } : {}),
           ...rows,

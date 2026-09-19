@@ -18,7 +18,7 @@ import {
 } from '@/lib/api-helpers';
 import { prisma } from '@/lib/db';
 import { monthLabel } from '@/lib/finance';
-import { itcRunningBalances, syncGstLedgerRows } from '@/lib/gst';
+import { itcByHead, itcRunningBalances, syncGstLedgerRows } from '@/lib/gst';
 import { gstReturnCreateSchema, gstReturnProjection, type GstReturnPublic } from '@/lib/schemas/gst';
 
 export const runtime = 'nodejs';
@@ -40,12 +40,14 @@ export async function GET(): Promise<NextResponse> {
       { itcClaimed: 0, itcUsed: 0, cashPaid: 0 },
     );
     const balances = itcRunningBalances(items);
+    const byHead = itcByHead(items);
     return NextResponse.json({
       items: (items as unknown as GstReturnPublic[]).map((r) => ({
         ...r,
         itcBalance: balances.get(r.month) ?? 0,
       })),
       totals: { ...totals, itcBalance: Math.round((totals.itcClaimed - totals.itcUsed) * 100) / 100 },
+      byHead,
     });
   } catch (err) {
     return errorResponse(err);
@@ -77,6 +79,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           cashAccountId: input.cashAccountId ?? null,
           reference: input.reference ?? null,
         };
+        const heads = {
+          itcClaimedIgst: input.itcClaimedIgst,
+          itcClaimedCgst: input.itcClaimedCgst,
+          itcClaimedSgst: input.itcClaimedSgst,
+          itcUsedIgst: input.itcUsedIgst,
+          itcUsedCgst: input.itcUsedCgst,
+          itcUsedSgst: input.itcUsedSgst,
+          cashPaidIgst: input.cashPaidIgst,
+          cashPaidCgst: input.cashPaidCgst,
+          cashPaidSgst: input.cashPaidSgst,
+        };
         const rows = await syncGstLedgerRows(
           tx,
           figures,
@@ -86,6 +99,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         return tx.gstReturn.create({
           data: {
             ...figures,
+            ...heads,
             itcClaimed: input.itcClaimed,
             notes: input.notes ?? null,
             ...rows,

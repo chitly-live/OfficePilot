@@ -11,7 +11,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatDateUtc, formatInr, monthLabel, shiftMonthKey, toMonthKey } from '@/lib/finance';
 import { canManageFinance, canViewFinance } from '@/lib/permissions';
-import { itcRunningBalances } from '@/lib/gst';
+import { itcByHead, itcRunningBalances } from '@/lib/gst';
 import { gstReturnProjection, type GstReturnPublic } from '@/lib/schemas/gst';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -27,6 +27,20 @@ export const metadata = {
 };
 
 export const dynamic = 'force-dynamic';
+
+/** Tiny IGST / CGST / SGST line under an amount; hidden when unsplit. */
+function HeadSplit({ igst, cgst, sgst }: { igst: number; cgst: number; sgst: number }) {
+  if (igst === 0 && cgst === 0 && sgst === 0) return null;
+  const parts: string[] = [];
+  if (igst > 0) parts.push(`I ${formatInr(igst)}`);
+  if (cgst > 0) parts.push(`C ${formatInr(cgst)}`);
+  if (sgst > 0) parts.push(`S ${formatInr(sgst)}`);
+  return (
+    <div className="whitespace-nowrap text-[11px] font-normal text-muted-foreground">
+      {parts.join(' · ')}
+    </div>
+  );
+}
 
 export default async function GstPage() {
   const session = await auth();
@@ -52,6 +66,7 @@ export default async function GstPage() {
   const totalItc = items.reduce((s, r) => s + r.itcUsed, 0);
   const totalCash = items.reduce((s, r) => s + r.cashPaid, 0);
   const balances = itcRunningBalances(items);
+  const byHead = itcByHead(items);
   const itcBalance = Math.round((totalClaimed - totalItc) * 100) / 100;
   const thisYear = new Date().getUTCFullYear();
   const fyItems = items.filter((r) => Number(r.month.slice(0, 4)) === thisYear);
@@ -86,6 +101,56 @@ export default async function GstPage() {
           delta={{ direction: 'flat', label: `${fyItems.length} month${fyItems.length === 1 ? '' : 's'}` }}
         />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">ITC balance by tax head</CardTitle>
+          <CardDescription>
+            Credit is tracked per head: IGST credit can settle any head, but CGST credit never
+            pays an SGST liability and vice versa.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full max-w-xl text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="py-2 pr-3 font-medium">Head</th>
+                  <th className="py-2 pr-3 text-right font-medium">Claimed</th>
+                  <th className="py-2 pr-3 text-right font-medium">Used</th>
+                  <th className="py-2 text-right font-medium">Balance</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {(
+                  [
+                    ['IGST', byHead.igst],
+                    ['CGST', byHead.cgst],
+                    ['SGST', byHead.sgst],
+                  ] as const
+                ).map(([label, pos]) => (
+                  <tr key={label}>
+                    <td className="py-2 pr-3 font-medium text-foreground">{label}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-status-green">
+                      {formatInr(pos.claimed)}
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{formatInr(pos.used)}</td>
+                    <td
+                      className={
+                        pos.balance < 0
+                          ? 'py-2 text-right font-semibold tabular-nums text-status-red'
+                          : 'py-2 text-right font-semibold tabular-nums'
+                      }
+                    >
+                      {formatInr(pos.balance)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       {missingSuggested ? (
         <div className="rounded-md border border-status-amber/40 bg-status-amber/5 px-3 py-2 text-sm">
@@ -137,10 +202,15 @@ export default async function GstPage() {
                       <td className="py-2 pr-3 font-medium text-foreground">{monthLabel(r.month)}</td>
                       <td className="py-2 pr-3 text-right tabular-nums text-status-green">
                         {r.itcClaimed > 0 ? `+${formatInr(r.itcClaimed)}` : '—'}
+                        <HeadSplit igst={r.itcClaimedIgst} cgst={r.itcClaimedCgst} sgst={r.itcClaimedSgst} />
                       </td>
-                      <td className="py-2 pr-3 text-right tabular-nums">{formatInr(r.itcUsed)}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">
+                        {formatInr(r.itcUsed)}
+                        <HeadSplit igst={r.itcUsedIgst} cgst={r.itcUsedCgst} sgst={r.itcUsedSgst} />
+                      </td>
                       <td className="py-2 pr-3 text-right tabular-nums text-status-red">
                         {formatInr(r.cashPaid)}
+                        <HeadSplit igst={r.cashPaidIgst} cgst={r.cashPaidCgst} sgst={r.cashPaidSgst} />
                       </td>
                       <td className="py-2 pr-3 text-right font-semibold tabular-nums">
                         {formatInr(r.itcUsed + r.cashPaid)}
