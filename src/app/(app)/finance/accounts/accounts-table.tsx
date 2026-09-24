@@ -310,6 +310,7 @@ export function AccountsTable({ items, parties, emptyAction, scopeLabel, readOnl
                     notes: row.original.notes,
                     isActive: row.original.isActive,
                     creditLimit: row.original.creditLimit,
+                    requiredAmb: row.original.requiredAmb,
                     billingDay: row.original.billingDay,
                     dueDay: row.original.dueDay,
                   }}

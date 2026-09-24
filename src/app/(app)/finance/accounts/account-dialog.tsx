@@ -64,6 +64,10 @@ const formSchema = z.object({
     .string()
     .trim()
     .refine((v) => v === '' || (Number.isFinite(Number(v)) && Number(v) >= 0), 'Enter a number'),
+  requiredAmb: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || (Number.isFinite(Number(v)) && Number(v) >= 0), 'Enter a number'),
   billingDay: z
     .string()
     .trim()
@@ -87,6 +91,7 @@ export interface AccountDialogAccount {
   notes: string | null;
   isActive: boolean;
   creditLimit: number | null;
+  requiredAmb: number | null;
   billingDay: number | null;
   dueDay: number | null;
 }
@@ -116,6 +121,7 @@ export function AccountDialog({ mode, account, parties, trigger }: AccountDialog
       openingBalance:
         account && account.openingBalance !== 0 ? String(account.openingBalance) : '',
       creditLimit: account?.creditLimit != null ? String(account.creditLimit) : '',
+      requiredAmb: account?.requiredAmb != null ? String(account.requiredAmb) : '',
       billingDay: account?.billingDay != null ? String(account.billingDay) : '',
       dueDay: account?.dueDay != null ? String(account.dueDay) : '',
       notes: account?.notes ?? '',
@@ -141,6 +147,9 @@ export function AccountDialog({ mode, account, parties, trigger }: AccountDialog
     const opening = values.openingBalance === '' ? 0 : Number(values.openingBalance);
     // Card fields only make sense on credit cards; clear them otherwise.
     const isCard = values.type === 'CREDIT_CARD';
+    const isBank = values.type === 'BANK';
+    const ambValue = isBank && values.requiredAmb !== '' ? Number(values.requiredAmb) : null;
+    const amb = mode === 'create' && ambValue === null ? {} : { requiredAmb: ambValue };
     const cardValues = {
       creditLimit: isCard && values.creditLimit !== '' ? Number(values.creditLimit) : null,
       billingDay: isCard && values.billingDay !== '' ? Number(values.billingDay) : null,
@@ -157,6 +166,7 @@ export function AccountDialog({ mode, account, parties, trigger }: AccountDialog
             type: values.type,
             openingBalance: opening,
             ...card,
+            ...amb,
             ...(values.ownerPartyId !== NONE_VALUE
               ? { ownerPartyId: values.ownerPartyId }
               : {}),
@@ -167,6 +177,7 @@ export function AccountDialog({ mode, account, parties, trigger }: AccountDialog
             type: values.type,
             openingBalance: opening,
             ...card,
+            ...amb,
             ownerPartyId: values.ownerPartyId === NONE_VALUE ? null : values.ownerPartyId,
             notes: values.notes === '' ? null : values.notes,
             isActive: values.isActive,
@@ -334,6 +345,40 @@ export function AccountDialog({ mode, account, parties, trigger }: AccountDialog
                 </FormItem>
               )}
             />
+
+            {type === 'BANK' ? (
+              <div className="rounded-md border bg-muted/20 p-3">
+                <FormField
+                  control={form.control}
+                  name="requiredAmb"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Required average monthly balance (₹){' '}
+                        <span className="text-muted-foreground">(optional)</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          step="any"
+                          placeholder="25000"
+                          disabled={isSubmitting}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        The bank averages the closing balance of every day in the month —
+                        weekends included. Set this and Finance will track the month&apos;s
+                        average and tell you what balance the remaining days need.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            ) : null}
 
             {type === 'CREDIT_CARD' ? (
               <div className="grid gap-4 rounded-md border bg-muted/20 p-3 sm:grid-cols-3">

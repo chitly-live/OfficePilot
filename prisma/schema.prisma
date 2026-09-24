@@ -520,6 +520,10 @@ model FinanceAccount {
   billingDay  Int?
   dueDay      Int?
 
+  /// Bank accounts only: the average monthly balance the bank expects. Fall
+  /// below it and they levy a non-maintenance charge plus GST.
+  requiredAmb Float?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

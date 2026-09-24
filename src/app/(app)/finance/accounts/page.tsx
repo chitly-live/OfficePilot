@@ -8,7 +8,8 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { canManageFinance, canViewFinance } from '@/lib/permissions';
 import { prisma } from '@/lib/db';
-import { formatInr } from '@/lib/finance';
+import { formatInr, toMonthKey } from '@/lib/finance';
+import { loadAccountAmb } from '@/lib/finance-amb';
 import { loadCardOverview } from '@/lib/finance-cards';
 import { loadAccountBalances } from '@/lib/finance-summary';
 import { productWhere, scopeLabel } from '@/lib/products';
@@ -22,6 +23,7 @@ import { StatCard } from '@/components/shared/StatCard';
 
 import { FinanceNav } from '../finance-nav';
 import { AccountDialog } from './account-dialog';
+import { AmbCard } from './amb-card';
 import { AccountsTable, type AccountRow } from './accounts-table';
 
 export const metadata = {
@@ -44,7 +46,8 @@ export default async function AccountsPage() {
   const scope = productContext.scope;
   const scopeText = scopeLabel(scope, productContext.companyShort);
 
-  const [rows, balances, parties, cards, scopedRows] = await Promise.all([
+  const ambMonth = toMonthKey(new Date());
+  const [rows, balances, parties, cards, scopedRows, amb] = await Promise.all([
     prisma.financeAccount.findMany({
       select: financeAccountProjection,
       orderBy: [{ isActive: 'desc' }, { name: 'asc' }, { id: 'asc' }],
@@ -63,6 +66,7 @@ export default async function AccountsPage() {
           where: { ...productWhere(scope), accountId: { not: null } },
           select: { accountId: true, direction: true, amount: true },
         }),
+    loadAccountAmb(prisma, ambMonth),
   ]);
 
   // Flow per account inside the header product scope (product / company-level).
@@ -128,6 +132,8 @@ export default async function AccountsPage() {
           <StatCard label="Accounts used" value={items.length} />
         </div>
       )}
+
+      <AmbCard items={amb} month={ambMonth} />
 
       <AccountsTable
         items={items}

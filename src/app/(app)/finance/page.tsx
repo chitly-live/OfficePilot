@@ -35,6 +35,7 @@ import {
   toMonthKey,
 } from '@/lib/finance';
 import { CARD_HEALTH_LABELS, type CardHealth } from '@/lib/credit-card';
+import { loadAccountAmb } from '@/lib/finance-amb';
 import { loadCardOverview } from '@/lib/finance-cards';
 import { loadSalaryBoard } from '@/lib/finance-employee';
 import { loadFinanceSummary } from '@/lib/finance-summary';
@@ -67,6 +68,11 @@ export const metadata = {
 export const dynamic = 'force-dynamic';
 
 const MONTH_KEY_RE = /^\d{4}-\d{2}$/;
+
+/** True when `key` is the month we are living in right now. */
+function isCurrentMonthKey(key: string): boolean {
+  return key === toMonthKey(new Date());
+}
 
 function coerceParam(
   raw: string | string[] | undefined,
@@ -107,6 +113,9 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
   const cards = (await loadCardOverview(prisma, new Date(), productContext.scope)).filter(
     (c) => c.isActive,
   );
+  // Average monthly balance only makes sense for the month in progress.
+  const amb = isCurrentMonthKey(monthKey) ? await loadAccountAmb(prisma, monthKey) : [];
+  const ambAlerts = amb.filter((a) => a.status === 'AT_RISK' || a.status === 'SHORT');
   const cardTone: Record<CardHealth, 'green' | 'amber' | 'red' | 'neutral'> = {
     OK: 'green',
     HIGH: 'amber',
@@ -163,6 +172,24 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
       />
 
       <FinanceNav />
+
+      {ambAlerts.length > 0 ? (
+        <div className="space-y-1 rounded-md border border-status-amber/40 bg-status-amber/5 px-3 py-2 text-sm">
+          {ambAlerts.map((a) => (
+            <p key={a.accountId}>
+              <span className="font-medium">{a.accountName}</span> average balance is{' '}
+              <span className="font-semibold tabular-nums">{formatInr(a.averageSoFar)}</span> against{' '}
+              {formatInr(a.required)} required.{' '}
+              {a.neededDailyBalance !== null
+                ? `Keep ${formatInr(a.neededDailyBalance)} in it for the remaining ${a.daysRemaining} day${a.daysRemaining === 1 ? '' : 's'} to avoid the charge.`
+                : ''}{' '}
+              <Link href="/finance/accounts" className="font-medium text-primary hover:underline">
+                Details →
+              </Link>
+            </p>
+          ))}
+        </div>
+      ) : null}
 
       {/* Month switcher */}
       <div className="flex flex-wrap items-center justify-between gap-3">

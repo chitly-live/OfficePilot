@@ -441,6 +441,7 @@ export const financeAccountCreateSchema = z.object({
   creditLimit: creditLimitField.optional(),
   billingDay: dayOfMonthField.optional(),
   dueDay: dayOfMonthField.optional(),
+  requiredAmb: creditLimitField.optional(),
 });
 
 export type FinanceAccountCreateInput = z.infer<typeof financeAccountCreateSchema>;
@@ -456,6 +457,7 @@ export const financeAccountUpdateSchema = z
     creditLimit: creditLimitField.nullable().optional(),
     billingDay: dayOfMonthField.nullable().optional(),
     dueDay: dayOfMonthField.nullable().optional(),
+    requiredAmb: creditLimitField.nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'At least one field must be provided',
@@ -539,6 +541,7 @@ export const financeAccountProjection = {
   creditLimit: true,
   billingDay: true,
   dueDay: true,
+  requiredAmb: true,
   createdAt: true,
   updatedAt: true,
   ownerParty: {
@@ -556,6 +559,7 @@ export type FinanceAccountPublic = {
   notes: string | null;
   /** Credit cards only. */
   creditLimit: number | null;
+  requiredAmb: number | null;
   billingDay: number | null;
   dueDay: number | null;
   createdAt: Date;
