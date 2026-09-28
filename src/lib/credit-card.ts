@@ -155,6 +155,61 @@ export function computeCardPosition(
   };
 }
 
+// ---------------------------------------------------------------------------
+// The bill already generated
+// ---------------------------------------------------------------------------
+
+/**
+ * The statement most recently generated, and when it must be paid.
+ * `currentBillingCycle` looks forward (the cycle still running); this looks
+ * back — the bill the owner is actually being asked to pay next.
+ */
+export function lastStatement(
+  billingDay: number,
+  now: Date,
+  dueDay?: number | null,
+): { statementDate: Date; dueDate: Date | null } {
+  const statementDate = currentBillingCycle(billingDay, now, dueDay).from;
+  return { statementDate, dueDate: dueDateFor(statementDate, dueDay) };
+}
+
+export interface StatementBill {
+  /** What the statement asked for: everything owed on the card before it. */
+  billed: number;
+  /** Paid towards the card since the statement was generated. */
+  paidSince: number;
+  /** Still to pay for that statement (never below zero). */
+  remaining: number;
+}
+
+/**
+ * How much of the bill generated on `statementDate` is still unpaid. Spend
+ * dated on the statement day itself belongs to the next cycle (bank
+ * convention, see `currentBillingCycle`).
+ */
+export function statementBill(
+  rows: readonly CardLedgerRow[],
+  statementDate: Date,
+  now: Date,
+): StatementBill {
+  const cut = statementDate.getTime();
+  let billed = 0;
+  let paidSince = 0;
+  for (const r of rows) {
+    const amount = Number.isFinite(r.amount) ? r.amount : 0;
+    const t = r.date.getTime();
+    if (r.onCard && t < cut) billed += r.direction === 'OUT' ? amount : -amount;
+    const settled = r.direction === 'OUT' ? (r.settlesAmount ?? (r.settlesCard ? amount : 0)) : 0;
+    if (settled > 0) {
+      if (t < cut) billed -= settled;
+      else if (t <= now.getTime()) paidSince += settled;
+    }
+  }
+  billed = Math.max(0, round2(billed));
+  paidSince = round2(paidSince);
+  return { billed, paidSince, remaining: Math.max(0, round2(billed - paidSince)) };
+}
+
 export type CardHealth = 'OK' | 'HIGH' | 'FULL' | 'OVER' | 'NO_LIMIT';
 
 /** Traffic light for the accounts page. */

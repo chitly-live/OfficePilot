@@ -17,6 +17,7 @@ import {
   FINANCE_PARTY_TYPE_LABELS,
   FINANCE_PARTY_TYPE_SHORT,
   computePassThrough,
+  formatDateUtc,
   formatInr,
 } from '@/lib/finance';
 import { loadCardOverview } from '@/lib/finance-cards';
@@ -157,6 +158,19 @@ export default async function PartyDetailPage({ params }: PageProps) {
     .filter((c) => c.spend > 0 || c.repaid > 0)
     .sort((a, b) => b.outstanding - a.outstanding);
   const balance = await loadPartyBalance(prisma, party.id, scope);
+  // Assets they hold now — as a party, or as the panel user this party is.
+  const heldAssets = await prisma.assetAssignment.findMany({
+    where: {
+      toDate: null,
+      OR: [{ toPartyId: party.id }, ...(party.userId ? [{ toUserId: party.userId }] : [])],
+    },
+    select: {
+      fromDate: true,
+      location: true,
+      asset: { select: { id: true, name: true, identifier: true, status: true } },
+    },
+    orderBy: { fromDate: 'desc' },
+  });
   const passThrough = computePassThrough(routedRows, party.id);
   const ledger = ledgerRows as unknown as FinanceTransactionPublic[];
 
@@ -411,6 +425,30 @@ export default async function PartyDetailPage({ params }: PageProps) {
                   <span>Entries</span>
                   <span>{passThrough.count}</span>
                 </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {heldAssets.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Assets with them</CardTitle>
+                <CardDescription>Company things {party.name} has right now.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ul className="divide-y">
+                  {heldAssets.map((h) => (
+                    <li key={h.asset.id} className="py-2 text-sm">
+                      <Link href={`/finance/assets/${h.asset.id}`} className="font-medium hover:underline">
+                        {h.asset.name}
+                      </Link>
+                      <span className="block text-xs text-muted-foreground">
+                        {[h.asset.identifier, h.location].filter(Boolean).join(' · ')}
+                        {h.asset.identifier || h.location ? ' · ' : ''}since {formatDateUtc(h.fromDate)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </CardContent>
             </Card>
           ) : null}

@@ -133,6 +133,11 @@ model User {
   passwordResetTokens PasswordResetToken[]
   /// The Finance party that represents this employee (salary payouts).
   financeParty        FinanceParty?        @relation("FinancePartyUser")
+  /// Assets this user created / is holding / handed over.
+  assetsCreated       Asset[]              @relation("AssetCreator")
+  assetsHeld          AssetAssignment[]    @relation("AssetHolderUser")
+  assetMoves          AssetAssignment[]    @relation("AssetAssignmentCreator")
+  monthsClosed        MonthClose[]         @relation("MonthCloseCreator")
 }
 
 /// A product / business line under the company (e.g. Chitly, Arrows Go).
@@ -150,6 +155,7 @@ model Product {
   updatedAt DateTime @updatedAt
 
   transactions FinanceTransaction[]
+  assets       Asset[]
 
   @@index([isActive, sortOrder])
 }
@@ -466,6 +472,9 @@ enum FinanceCategory {
   RENT
   UTILITIES
   OFFICE
+  /// Something bought that we still own — laptop, phone, furniture, a domain.
+  /// Capital, so it moves cash but never lands in the P&L expense figure.
+  ASSET_PURCHASE
   TRAVEL
   TAX
   BANK_CHARGES
@@ -497,6 +506,8 @@ model FinanceParty {
   /// Transactions where this party was only the intermediary the bank paid
   /// (money passed through them to the real `party`). Not part of balances.
   routedTransactions FinanceTransaction[] @relation("FinanceTransactionVia")
+  /// Assets this party has held (a worker's phone, a vendor's repair).
+  assetsHeld         AssetAssignment[]    @relation("AssetHolderParty")
 
   @@index([type])
   @@index([name])
@@ -533,6 +544,8 @@ model FinanceAccount {
   /// Shares of a repayment that cleared this card (one payment, many cards).
   allocations  CardRepaymentAllocation[]
   gstReturns   GstReturn[]
+  /// Balance recorded each time a month containing this account was closed.
+  closings     MonthCloseBalance[]
 
   @@index([type])
   @@index([ownerPartyId])
@@ -583,6 +596,8 @@ model FinanceTransaction {
   /// Per-card split when ONE payment clears more than one card. The ledger
   /// row always mirrors the bank statement line; the split lives here.
   cardAllocations CardRepaymentAllocation[]
+  /// Set when this row paid for something we still own.
+  asset           Asset?
 
   @@index([date])
   @@index([direction])
@@ -676,4 +691,146 @@ model GstReturn {
   updatedAt DateTime @updatedAt
 
   @@index([month])
+}
+
+// ---------------------------------------------------------------------------
+// Assets — what we bought and still own, and who has it right now
+// ---------------------------------------------------------------------------
+
+/// Something you can hold versus something that only exists as a
+/// subscription / registration (a domain, a SaaS seat).
+enum AssetKind {
+  PHYSICAL
+  DIGITAL
+}
+
+enum AssetStatus {
+  /// Someone is using it.
+  IN_USE
+  /// Ours, with nobody — in the office cupboard.
+  IN_STOCK
+  /// Away for repair / replacement.
+  REPAIR
+  LOST
+  SOLD
+  SCRAPPED
+}
+
+/// One thing we bought and still own. The money stays in the ledger: an
+/// asset points at the transaction that paid for it (`transactionId`) so
+/// the same rupee is never recorded twice.
+///
+/// Where it is right now is NOT a column here — it is the open
+/// `AssetAssignment` (the one with `toDate = null`). One source of truth,
+/// the same rule the ledger follows with the bank statement.
+model Asset {
+  id         String    @id @default(cuid())
+  name       String
+  kind       AssetKind @default(PHYSICAL)
+  /// Free label so the list groups sensibly: Laptop, Phone, SIM,
+  /// Furniture, Domain, Subscription.
+  category   String?
+  /// Serial number, IMEI, SIM number, domain name — whatever identifies
+  /// this exact one when two look alike.
+  identifier String?
+
+  purchaseDate  DateTime?
+  /// What it cost, INR. Usually copied from the linked transaction.
+  cost          Float?
+  /// The ledger row that paid for it. One row buys one asset; buy three
+  /// laptops on one invoice and the other two link to nothing, with the
+  /// cost split by hand.
+  transactionId String?             @unique
+  transaction   FinanceTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  status   AssetStatus @default(IN_STOCK)
+  /// Domains and subscriptions: when it has to be paid for again.
+  renewsOn DateTime?
+  notes    String?     @db.Text
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  createdById String
+  createdBy   User   @relation("AssetCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments AssetAssignment[]
+
+  @@index([status])
+  @@index([kind])
+  @@index([productId])
+  @@index([renewsOn])
+  @@index([name])
+}
+
+/// Who had an asset, where, and between which dates. The row with
+/// `toDate = null` is where the asset is right now; closing it and opening
+/// a new one is how a handover is recorded, so the trail is never lost.
+model AssetAssignment {
+  id      String @id @default(cuid())
+  assetId String
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  /// One of the two is set: a panel user, or an outside party (a worker,
+  /// a vendor holding it for repair). Neither set = back with the company.
+  toUserId  String?
+  toUser    User?         @relation("AssetHolderUser", fields: [toUserId], references: [id], onDelete: SetNull)
+  toPartyId String?
+  toParty   FinanceParty? @relation("AssetHolderParty", fields: [toPartyId], references: [id], onDelete: SetNull)
+
+  /// Free text: "Office", "Anchal's home", "RBL service centre".
+  location String?
+
+  fromDate DateTime
+  /// null = still with them.
+  toDate   DateTime?
+  note     String?
+
+  createdById String
+  createdBy   User   @relation("AssetAssignmentCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assetId, toDate])
+  @@index([toUserId])
+  @@index([toPartyId])
+}
+
+// ---------------------------------------------------------------------------
+// Month close — freeze a month once it has been checked against the bank
+// ---------------------------------------------------------------------------
+
+/// A month that has been reconciled and locked. While a month is closed,
+/// writes dated inside it are refused, so a verified figure cannot drift.
+/// An admin can reopen it; the balances recorded at close time act as a
+/// tripwire if anything moved while it was open.
+model MonthClose {
+  id    String @id @default(cuid())
+  /// YYYY-MM.
+  month String @unique
+
+  closedAt   DateTime @default(now())
+  closedById String
+  closedBy   User     @relation("MonthCloseCreator", fields: [closedById], references: [id])
+  note       String?
+
+  balances MonthCloseBalance[]
+}
+
+/// Each account's closing balance on the day the month was locked.
+model MonthCloseBalance {
+  id           String         @id @default(cuid())
+  monthCloseId String
+  monthClose   MonthClose     @relation(fields: [monthCloseId], references: [id], onDelete: Cascade)
+  accountId    String
+  account      FinanceAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// `opening + ΣIN − ΣOUT` for every row up to the end of that month.
+  balance      Float
+
+  @@unique([monthCloseId, accountId])
+  @@index([accountId])
 }

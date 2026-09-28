@@ -15,7 +15,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowDownLeft, ArrowUpRight, Loader2 } from 'lucide-react';
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  ChevronDown,
+  Loader2,
+  Plus,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
 import {
   FinanceCategory,
   FinanceDirection,
@@ -51,6 +59,9 @@ import {
   FINANCE_PARTY_TYPE_SHORT,
   categoriesForDirection,
   categoryDirection,
+  formatDateUtc,
+  formatInr,
+  round2,
 } from '@/lib/finance';
 import { cn } from '@/lib/utils';
 
@@ -155,8 +166,24 @@ export interface TransactionFormProps {
   products?: ProductFormOption[];
   /** Pre-filled values (edit mode, or `?direction=` style prefills). */
   initialValues?: Partial<FormValues>;
+  /** Edit mode: the per-card split this payment already carries. */
+  initialSplit?: { accountId: string; amount: number }[];
   /** Where to go after a successful save. */
   returnTo?: string;
+}
+
+interface SplitPart {
+  accountId: string;
+  amount: string;
+}
+
+interface DuplicateHit {
+  id: string;
+  date: string;
+  amount: number;
+  description: string | null;
+  accountName: string | null;
+  reference: string | null;
 }
 
 const DEFAULT_CATEGORY: Record<FinanceDirection, FinanceCategory> = {
@@ -171,9 +198,35 @@ export function TransactionForm({
   accounts,
   products = [],
   initialValues,
+  initialSplit = [],
   returnTo,
 }: TransactionFormProps) {
   const router = useRouter();
+  const cards = React.useMemo(() => accounts.filter((a) => a.type === 'CREDIT_CARD'), [accounts]);
+
+  // One payment that cleared several cards: each card's share.
+  const [splitMode, setSplitMode] = React.useState(initialSplit.length > 0);
+  const [splitParts, setSplitParts] = React.useState<SplitPart[]>(
+    initialSplit.length > 0
+      ? initialSplit.map((p) => ({ accountId: p.accountId, amount: String(p.amount) }))
+      : [
+          { accountId: '', amount: '' },
+          { accountId: '', amount: '' },
+        ],
+  );
+  const [splitError, setSplitError] = React.useState<string | null>(null);
+
+  // Rows the server thinks this entry may duplicate; saving again confirms.
+  const [duplicates, setDuplicates] = React.useState<DuplicateHit[] | null>(null);
+
+  // Rarely needed fields stay folded unless the row already uses them.
+  const [showMore, setShowMore] = React.useState(
+    Boolean(
+      (initialValues?.viaPartyId && initialValues.viaPartyId !== NONE_VALUE) ||
+        initialValues?.hasOriginal ||
+        initialValues?.dueDate,
+    ),
+  );
 
   const initialDirection = initialValues?.direction ?? 'OUT';
   const form = useForm<FormValues>({
@@ -223,7 +276,32 @@ export function TransactionForm({
   const showDueDate =
     category === 'LOAN_RECEIVED' || category === 'LOAN_REPAYMENT';
 
-  async function onSubmit(values: FormValues) {
+  const amountValue = Number(form.watch('amount')) || 0;
+  const splitTotal = round2(splitParts.reduce((s, p) => s + (Number(p.amount) || 0), 0));
+
+  function checkSplit(amount: number): { accountId: string; amount: number }[] | null {
+    const parts = splitParts
+      .filter((p) => p.accountId !== '' || p.amount !== '')
+      .map((p) => ({ accountId: p.accountId, amount: Number(p.amount) }));
+    if (parts.length < 2) return (setSplitError('Add at least two cards, or switch back to one card.'), null);
+    if (parts.some((p) => !p.accountId)) return (setSplitError('Pick a card on every line.'), null);
+    if (new Set(parts.map((p) => p.accountId)).size !== parts.length) {
+      return (setSplitError('Each card can appear only once.'), null);
+    }
+    if (parts.some((p) => !(p.amount > 0))) return (setSplitError('Every card needs an amount above zero.'), null);
+    const total = round2(parts.reduce((s, p) => s + p.amount, 0));
+    if (Math.abs(total - round2(amount)) >= 0.005) {
+      return (setSplitError(`The cards add up to ${formatInr(total)} but the payment is ${formatInr(amount)}.`), null);
+    }
+    setSplitError(null);
+    return parts;
+  }
+
+  async function onSubmit(values: FormValues, confirmDuplicate = false) {
+    const isRepayment = values.category === 'CARD_REPAYMENT';
+    const split = isRepayment && splitMode ? checkSplit(Number(values.amount)) : [];
+    if (split === null) return;
+
     const payload: Record<string, unknown> = {
       date: values.date,
       direction: values.direction,
@@ -237,10 +315,13 @@ export function TransactionForm({
       if (values.partyId !== NONE_VALUE) payload.partyId = values.partyId;
       if (values.viaPartyId !== NONE_VALUE) payload.viaPartyId = values.viaPartyId;
       if (values.accountId !== NONE_VALUE) payload.accountId = values.accountId;
-      if (values.category === 'CARD_REPAYMENT' && values.settlesAccountId !== NONE_VALUE) {
+      if (isRepayment && split.length > 0) {
+        payload.cardSplit = split;
+      } else if (isRepayment && values.settlesAccountId !== NONE_VALUE) {
         payload.settlesAccountId = values.settlesAccountId;
       }
       if (values.productId !== NONE_VALUE) payload.productId = values.productId;
+      if (confirmDuplicate) payload.confirmDuplicate = true;
       if (values.hasOriginal) {
         payload.originalAmount = Number(values.originalAmount);
         payload.originalCurrency = values.originalCurrency.toUpperCase();
@@ -255,9 +336,10 @@ export function TransactionForm({
       payload.viaPartyId =
         values.viaPartyId === NONE_VALUE ? null : values.viaPartyId;
       payload.settlesAccountId =
-        values.category === 'CARD_REPAYMENT' && values.settlesAccountId !== NONE_VALUE
+        isRepayment && split.length === 0 && values.settlesAccountId !== NONE_VALUE
           ? values.settlesAccountId
           : null;
+      if (isRepayment) payload.cardSplit = split;
       payload.accountId =
         values.accountId === NONE_VALUE ? null : values.accountId;
       payload.productId = values.productId === NONE_VALUE ? null : values.productId;
@@ -282,10 +364,16 @@ export function TransactionForm({
           );
 
     if (!result.ok) {
+      const hits = result.body?.duplicates;
+      if (result.status === 409 && Array.isArray(hits)) {
+        setDuplicates(hits as DuplicateHit[]);
+        return;
+      }
       toast.error(result.message);
       return;
     }
 
+    setDuplicates(null);
     toast.success(mode === 'create' ? 'Transaction recorded.' : 'Transaction updated.');
     router.push(returnTo ?? '/finance/transactions');
     router.refresh();
@@ -294,7 +382,7 @@ export function TransactionForm({
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit(onSubmit)}
+        onSubmit={form.handleSubmit((v) => onSubmit(v))}
         className="space-y-5"
         noValidate
       >
@@ -539,47 +627,87 @@ export function TransactionForm({
           />
         ) : null}
 
-        <FormField
-          control={form.control}
-          name="viaPartyId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                Routed via <span className="text-muted-foreground">(optional)</span>
-              </FormLabel>
-              <Select
-                value={field.value}
-                onValueChange={field.onChange}
-                disabled={isSubmitting}
-              >
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value={NONE_VALUE}>— Direct, nobody in between —</SelectItem>
-                  {parties.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                      <span className="ml-1 text-xs text-muted-foreground">
-                        · {FINANCE_PARTY_TYPE_SHORT[p.type]}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormDescription>
-                Use when the bank paid someone else who passed the money on
-                (e.g. bank → Ritu → Shubham). The party above still gets the
-                credit; the person here is only shown as the route.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
         {category === 'CARD_REPAYMENT' ? (
+          <div className="space-y-3 rounded-md border p-4">
+            {splitMode ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Cards this one payment cleared</p>
+                {splitParts.map((part, i) => (
+                  <div key={i} className="flex gap-2">
+                    <Select
+                      value={part.accountId || undefined}
+                      onValueChange={(v) =>
+                        setSplitParts((prev) => prev.map((p, j) => (j === i ? { ...p, accountId: v } : p)))
+                      }
+                      disabled={isSubmitting}
+                    >
+                      <SelectTrigger className="flex-1" aria-label={`Card ${i + 1}`}>
+                        <SelectValue placeholder="Pick a card" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cards.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step="any"
+                      placeholder="₹"
+                      className="w-32"
+                      aria-label={`Amount for card ${i + 1}`}
+                      value={part.amount}
+                      onChange={(e) =>
+                        setSplitParts((prev) => prev.map((p, j) => (j === i ? { ...p, amount: e.target.value } : p)))
+                      }
+                      disabled={isSubmitting}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Remove card"
+                      disabled={isSubmitting || splitParts.length <= 2}
+                      onClick={() => setSplitParts((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  </div>
+                ))}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isSubmitting || splitParts.length >= cards.length}
+                    onClick={() => setSplitParts((prev) => [...prev, { accountId: '', amount: '' }])}
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    <span>Add card</span>
+                  </Button>
+                  <span
+                    className={cn(
+                      'tabular-nums',
+                      Math.abs(splitTotal - round2(amountValue)) < 0.005 ? 'text-status-green' : 'text-status-amber',
+                    )}
+                  >
+                    {formatInr(splitTotal)} of {formatInr(amountValue)}
+                    {Math.abs(splitTotal - round2(amountValue)) >= 0.005
+                      ? ` · ${formatInr(round2(amountValue - splitTotal))} left`
+                      : ' · adds up'}
+                  </span>
+                </div>
+                {splitError ? <p className="text-sm text-destructive">{splitError}</p> : null}
+                <p className="text-xs text-muted-foreground">
+                  The ledger keeps this as one payment, exactly as the bank shows it. The split only decides how much of
+                  each card&apos;s limit it frees.
+                </p>
+              </div>
+            ) : (
           <FormField
             control={form.control}
             name="settlesAccountId"
@@ -623,6 +751,19 @@ export function TransactionForm({
               </FormItem>
             )}
           />
+            )}
+            <button
+              type="button"
+              className="text-xs font-medium text-primary hover:underline"
+              onClick={() => {
+                setSplitMode((v) => !v);
+                setSplitError(null);
+              }}
+              disabled={isSubmitting}
+            >
+              {splitMode ? 'Settles just one card' : 'This one payment cleared more than one card →'}
+            </button>
+          </div>
         ) : null}
 
         <FormField
@@ -664,6 +805,7 @@ export function TransactionForm({
                     {...field}
                   />
                 </FormControl>
+                <FormDescription>The UTR from the bank statement lets Reconcile match it.</FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -688,76 +830,169 @@ export function TransactionForm({
           ) : null}
         </div>
 
-        {/* Foreign currency */}
-        <fieldset className="space-y-3 rounded-md border bg-muted/20 p-4">
-          <FormField
-            control={form.control}
-            name="hasOriginal"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center gap-2 space-y-0">
-                <FormControl>
-                  <Checkbox
-                    id="txn-has-original"
-                    checked={field.value}
-                    onCheckedChange={(v) => field.onChange(v === true)}
+        <div>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+            onClick={() => setShowMore((v) => !v)}
+            aria-expanded={showMore}
+          >
+            <ChevronDown className={cn('h-4 w-4 transition-transform', showMore && 'rotate-180')} aria-hidden="true" />
+            More details
+            <span className="font-normal">(routed via someone, foreign currency)</span>
+          </button>
+        </div>
+
+        {showMore ? (
+          <div className="space-y-5">
+            <FormField
+              control={form.control}
+              name="viaPartyId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Routed via <span className="text-muted-foreground">(optional)</span>
+                  </FormLabel>
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
                     disabled={isSubmitting}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value={NONE_VALUE}>— Direct, nobody in between —</SelectItem>
+                      {parties.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            · {FINANCE_PARTY_TYPE_SHORT[p.type]}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Use when the bank paid someone else who passed the money on
+                    (e.g. bank → Ritu → Shubham). The party above still gets the
+                    credit; the person here is only shown as the route.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Foreign currency */}
+            <fieldset className="space-y-3 rounded-md border bg-muted/20 p-4">
+              <FormField
+                control={form.control}
+                name="hasOriginal"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center gap-2 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        id="txn-has-original"
+                        checked={field.value}
+                        onCheckedChange={(v) => field.onChange(v === true)}
+                        disabled={isSubmitting}
+                      />
+                    </FormControl>
+                    <FormLabel
+                      htmlFor="txn-has-original"
+                      className="cursor-pointer text-sm font-normal"
+                    >
+                      Paid in a foreign currency (e.g. $299 that cost ₹29,722)
+                    </FormLabel>
+                  </FormItem>
+                )}
+              />
+              {hasOriginal ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="originalAmount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Original amount</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            step="any"
+                            placeholder="299"
+                            disabled={isSubmitting}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
-                </FormControl>
-                <FormLabel
-                  htmlFor="txn-has-original"
-                  className="cursor-pointer text-sm font-normal"
-                >
-                  Paid in a foreign currency (e.g. $299 that cost ₹29,722)
-                </FormLabel>
-              </FormItem>
-            )}
-          />
-          {hasOriginal ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="originalAmount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Original amount</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        step="any"
-                        placeholder="299"
-                        disabled={isSubmitting}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="originalCurrency"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Currency</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="USD"
-                        maxLength={3}
-                        autoComplete="off"
-                        disabled={isSubmitting}
-                        {...field}
-                        onChange={(e) => field.onChange(e.target.value.toUpperCase())}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                  <FormField
+                    control={form.control}
+                    name="originalCurrency"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Currency</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="USD"
+                            maxLength={3}
+                            autoComplete="off"
+                            disabled={isSubmitting}
+                            {...field}
+                            onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              ) : null}
+            </fieldset>
+          </div>
+        ) : null}
+
+        {duplicates && duplicates.length > 0 ? (
+          <div className="rounded-md border border-status-amber/50 bg-status-amber/5 p-3 text-sm">
+            <p className="flex items-center gap-2 font-medium">
+              <TriangleAlert className="h-4 w-4 text-status-amber" aria-hidden="true" />
+              This looks like an entry you already made
+            </p>
+            <ul className="mt-2 space-y-1">
+              {duplicates.map((d) => (
+                <li key={d.id} className="flex flex-wrap justify-between gap-x-4">
+                  <Link href={`/finance/transactions/${d.id}`} className="hover:underline" target="_blank">
+                    {formatDateUtc(d.date)} · {d.description ?? 'No description'}
+                    {d.accountName ? <span className="text-muted-foreground"> · {d.accountName}</span> : null}
+                    {d.reference ? (
+                      <span className="font-mono text-xs text-muted-foreground"> · {d.reference}</span>
+                    ) : null}
+                  </Link>
+                  <span className="tabular-nums">{formatInr(d.amount)}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={isSubmitting}
+                onClick={form.handleSubmit((v) => onSubmit(v, true))}
+              >
+                It is a separate payment — save it
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => setDuplicates(null)}>
+                Let me check
+              </Button>
             </div>
-          ) : null}
-        </fieldset>
+          </div>
+        ) : null}
 
         <div className="flex items-center justify-end gap-2 pt-2">
           <Button

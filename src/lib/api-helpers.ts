@@ -44,6 +44,7 @@ import { ZodError, type ZodSchema } from 'zod';
 import { Prisma, type Role } from '@prisma/client';
 
 import { auth } from '@/lib/auth';
+import { BadRequestError, ConflictError, UnauthorizedError } from '@/lib/http-errors';
 import {
   assertCan,
   PermissionError,
@@ -74,39 +75,11 @@ export interface AuthenticatedSession {
 // Errors
 // ---------------------------------------------------------------------------
 
-/**
- * Thrown when an API route is hit without a valid session.
- *
- * The middleware (see `src/middleware.ts`) already 401s unauthenticated
- * `/api/*` traffic, but route handlers still call `requireSession()`
- * defensively so a misconfigured matcher can't accidentally expose them.
- */
-export class UnauthorizedError extends Error {
-  readonly code = 'unauthorized' as const;
-
-  constructor(message = 'Unauthorized') {
-    super(message);
-    this.name = 'UnauthorizedError';
-    Object.setPrototypeOf(this, UnauthorizedError.prototype);
-  }
-}
-
-/**
- * Thrown when JSON parsing fails or the schema rejects the body. Keeps
- * Zod errors first-class (kept on `.zodError`) so `errorResponse(...)`
- * can attach structured `issues` to the 400 payload.
- */
-export class BadRequestError extends Error {
-  readonly code = 'bad_request' as const;
-  readonly zodError?: ZodError;
-
-  constructor(message = 'Bad request', zodError?: ZodError) {
-    super(message);
-    this.name = 'BadRequestError';
-    this.zodError = zodError;
-    Object.setPrototypeOf(this, BadRequestError.prototype);
-  }
-}
+// UnauthorizedError (no valid session — the middleware already 401s such
+// `/api/*` traffic, handlers re-check defensively), BadRequestError and
+// ConflictError live in `http-errors.ts` so pure libraries can throw them
+// without importing auth. Re-exported here for every existing caller.
+export { BadRequestError, ConflictError, UnauthorizedError };
 
 // ---------------------------------------------------------------------------
 // Session guards
@@ -289,6 +262,13 @@ export function errorResponse(error: unknown): NextResponse {
     return NextResponse.json(
       { error: 'bad_request', message: 'Validation failed', issues: error.issues },
       { status: 400 },
+    );
+  }
+
+  if (error instanceof ConflictError) {
+    return NextResponse.json(
+      { error: error.reason, message: error.message, ...(error.details ?? {}) },
+      { status: 409 },
     );
   }
 

@@ -59,24 +59,47 @@ export default async function NewTransactionPage({
     redirect(session.role === 'ACCOUNTANT' ? '/finance/transactions' : '/dashboard');
   }
 
-  const rawDirection = coerceParam(searchParams?.direction);
+  // "Repeat" on a ledger row: same everything except the date and the UTR,
+  // which belong to the new payment.
+  const copyId = coerceParam(searchParams?.copy);
+  const copy = copyId
+    ? await prisma.financeTransaction.findUnique({
+        where: { id: copyId },
+        select: {
+          direction: true,
+          category: true,
+          amount: true,
+          description: true,
+          partyId: true,
+          viaPartyId: true,
+          accountId: true,
+          settlesAccountId: true,
+          productId: true,
+        },
+      })
+    : null;
+
+  const rawDirection = coerceParam(searchParams?.direction) ?? copy?.direction;
   const direction: FinanceDirection =
     rawDirection === 'IN' || rawDirection === 'OUT' ? rawDirection : 'OUT';
 
-  const rawCategory = coerceParam(searchParams?.category);
+  const rawCategory = coerceParam(searchParams?.category) ?? copy?.category;
   const category =
     rawCategory && (Object.values(FinanceCategory) as string[]).includes(rawCategory)
       ? (rawCategory as FinanceCategory)
       : undefined;
 
-  const partyId = coerceParam(searchParams?.partyId);
-  const accountId = coerceParam(searchParams?.accountId);
-  const amountRaw = coerceParam(searchParams?.amount);
+  const partyId = coerceParam(searchParams?.partyId) ?? copy?.partyId ?? undefined;
+  const accountId = coerceParam(searchParams?.accountId) ?? copy?.accountId ?? undefined;
+  const amountRaw = coerceParam(searchParams?.amount) ?? (copy ? String(copy.amount) : undefined);
   const amountPrefill =
     amountRaw && Number.isFinite(Number(amountRaw)) && Number(amountRaw) > 0
       ? String(Number(amountRaw))
       : undefined;
-  const descriptionPrefill = coerceParam(searchParams?.description)?.slice(0, 500);
+  const descriptionPrefill = (coerceParam(searchParams?.description) ?? copy?.description ?? undefined)?.slice(
+    0,
+    500,
+  );
   const month = coerceParam(searchParams?.month);
   const returnToRaw = coerceParam(searchParams?.returnTo);
   const returnTo =
@@ -111,7 +134,7 @@ export default async function NewTransactionPage({
 
   // Default product = whatever the header switcher is set to; `?productId=`
   // wins when a page deep-links with one.
-  const rawProductId = coerceParam(searchParams?.productId);
+  const rawProductId = coerceParam(searchParams?.productId) ?? copy?.productId ?? undefined;
   const productId =
     rawProductId && productContext.products.some((p) => p.id === rawProductId)
       ? rawProductId
@@ -131,7 +154,11 @@ export default async function NewTransactionPage({
     <div className="space-y-6">
       <PageHeader
         title={direction === 'IN' ? 'Record money in' : 'Record money out'}
-        subtitle="Date, amount, category — and who it went to or came from."
+        subtitle={
+          copy
+            ? 'Copied from an earlier entry — check the date and amount, add the new UTR.'
+            : 'Date, amount, category — and who it went to or came from.'
+        }
         actions={
           <Button asChild variant="outline" size="sm">
             <Link href={returnTo}>
@@ -168,6 +195,12 @@ export default async function NewTransactionPage({
                 : {}),
               ...(amountPrefill ? { amount: amountPrefill } : {}),
               ...(descriptionPrefill ? { description: descriptionPrefill } : {}),
+              ...(copy?.viaPartyId && parties.some((p) => p.id === copy.viaPartyId)
+                ? { viaPartyId: copy.viaPartyId }
+                : {}),
+              ...(copy?.settlesAccountId && accounts.some((a) => a.id === copy.settlesAccountId)
+                ? { settlesAccountId: copy.settlesAccountId }
+                : {}),
             }}
             returnTo={returnTo}
           />

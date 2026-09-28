@@ -150,6 +150,7 @@ describe('assembleFinanceReport', () => {
       investmentReceived: 0,
       loanRepaid: 0,
       cardRepaid: 5000,
+      assetPurchases: 0,
     });
     expect(report.incomeByCategory.map((c) => c.category)).toEqual(['SALES']);
     expect(report.expenseByCategory.map((c) => c.category)).toEqual(['ADS', 'PAYOUT', 'SOFTWARE', 'BANK_CHARGES']);

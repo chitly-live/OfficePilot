@@ -97,7 +97,7 @@ export function TransactionsTable({
                   tone={directionTone(t.direction)}
                   label={meta.label}
                 />
-                {meta.kind === 'FINANCING' ? (
+                {meta.kind !== 'OPERATING' ? (
                   <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                     not P&amp;L
                   </span>

@@ -178,11 +178,14 @@ export default auth((req) => {
       return NextResponse.redirect(new URL('/dashboard', nextUrl.origin));
     }
     // Accountants may write exactly one thing: the monthly GST return.
+    // The reconcile POST only compares a statement with the ledger and
+    // stores nothing, so it is a read for them too.
     if (
       role === 'ACCOUNTANT' &&
       isApiPath(pathname) &&
       req.method !== 'GET' &&
-      !matchesPrefix(pathname, '/api/finance/gst')
+      !matchesPrefix(pathname, '/api/finance/gst') &&
+      !(req.method === 'POST' && matchesPrefix(pathname, '/api/finance/reconcile'))
     ) {
       return jsonError(403, 'Read-only access');
     }

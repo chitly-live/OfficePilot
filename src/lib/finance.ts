@@ -29,7 +29,12 @@ import type {
 // Category metadata
 // ---------------------------------------------------------------------------
 
-export type FinanceCategoryKind = 'OPERATING' | 'FINANCING';
+/**
+ * OPERATING counts in income / expense (P&L). FINANCING moves cash but is
+ * borrowing or settling a debt. CAPITAL moves cash to buy something we
+ * keep (an asset) — not an expense of the month it was bought in.
+ */
+export type FinanceCategoryKind = 'OPERATING' | 'FINANCING' | 'CAPITAL';
 
 export interface FinanceCategoryMeta {
   label: string;
@@ -141,7 +146,13 @@ export const FINANCE_CATEGORY_META: Record<FinanceCategory, FinanceCategoryMeta>
     label: 'Office & supplies',
     direction: 'OUT',
     kind: 'OPERATING',
-    hint: 'Stationery, equipment, snacks',
+    hint: 'Stationery, snacks, small things used up',
+  },
+  ASSET_PURCHASE: {
+    label: 'Asset purchase',
+    direction: 'OUT',
+    kind: 'CAPITAL',
+    hint: 'Laptop, phone, furniture, a domain — something we keep',
   },
   TRAVEL: {
     label: 'Travel',

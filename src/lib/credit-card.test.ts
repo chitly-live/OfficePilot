@@ -10,6 +10,8 @@ import {
   computeCardPosition,
   currentBillingCycle,
   dueDateFor,
+  lastStatement,
+  statementBill,
   type CardLedgerRow,
 } from './credit-card';
 
@@ -161,5 +163,67 @@ describe('computeCardPosition — one payment split across cards', () => {
     );
     expect(pos.repaid).toBe(0);
     expect(pos.outstanding).toBe(5000);
+  });
+});
+
+describe('lastStatement', () => {
+  it('looks back to the bill already generated', () => {
+    // RBL: statement on the 13th, due on the 1st. On 29 Sep the 13 Sep
+    // bill is the one due (1 Oct), not the 13 Oct one.
+    const s = lastStatement(13, new Date('2026-09-29T12:00:00Z'), 1);
+    expect(s.statementDate.toISOString().slice(0, 10)).toBe('2026-09-13');
+    expect(s.dueDate?.toISOString().slice(0, 10)).toBe('2026-10-01');
+  });
+
+  it('on the statement day itself, that day\'s statement is the latest', () => {
+    const s = lastStatement(15, new Date('2026-09-15T00:00:00Z'), 2);
+    expect(s.statementDate.toISOString().slice(0, 10)).toBe('2026-09-15');
+    expect(s.dueDate?.toISOString().slice(0, 10)).toBe('2026-10-02');
+  });
+});
+
+describe('statementBill', () => {
+  const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
+  const stmt = d('2026-09-13');
+  const now = d('2026-09-29');
+
+  it('bills spend before the statement day and credits payments made since', () => {
+    const b = statementBill(
+      [
+        { direction: 'OUT', amount: 30000, date: d('2026-09-01'), onCard: true, settlesCard: false },
+        { direction: 'OUT', amount: 10000, date: d('2026-09-12'), onCard: true, settlesCard: false },
+        // Spend on the statement day belongs to the next bill.
+        { direction: 'OUT', amount: 5000, date: d('2026-09-13'), onCard: true, settlesCard: false },
+        // A split payment after the statement: only this card's share counts.
+        { direction: 'OUT', amount: 70000, date: d('2026-09-21'), onCard: false, settlesCard: false, settlesAmount: 37222 },
+      ],
+      stmt,
+      now,
+    );
+    expect(b).toEqual({ billed: 40000, paidSince: 37222, remaining: 2778 });
+  });
+
+  it('nets payments made before the statement into the bill', () => {
+    const b = statementBill(
+      [
+        { direction: 'OUT', amount: 50000, date: d('2026-09-01'), onCard: true, settlesCard: false },
+        { direction: 'OUT', amount: 44000, date: d('2026-09-12'), onCard: false, settlesCard: true },
+      ],
+      stmt,
+      now,
+    );
+    expect(b).toEqual({ billed: 6000, paidSince: 0, remaining: 6000 });
+  });
+
+  it('never asks for less than nothing', () => {
+    const b = statementBill(
+      [
+        { direction: 'OUT', amount: 1000, date: d('2026-09-01'), onCard: true, settlesCard: false },
+        { direction: 'OUT', amount: 5000, date: d('2026-09-20'), onCard: false, settlesCard: true },
+      ],
+      stmt,
+      now,
+    );
+    expect(b.remaining).toBe(0);
   });
 });

@@ -9,6 +9,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import type { Prisma } from '@prisma/client';
 
 import { auth } from '@/lib/auth';
 import { canManageFinance, canViewFinance } from '@/lib/permissions';
@@ -75,6 +76,13 @@ export default async function TransactionsPage({
     }
   }
 
+  // Bank charges (IMPS fee + its GST, AMB fee…) are a quarter of the rows
+  // and a fraction of a percent of the money. They stay in the ledger —
+  // line for line with the bank — but fold into one summary line here
+  // unless asked for, filtered for, or searched for.
+  const showCharges = rawParams.charges === 'show';
+  delete rawParams.charges;
+
   // Month handling: absent → current month, 'all' → no date filter.
   const rawMonth = rawParams.month;
   const monthParam: string =
@@ -112,15 +120,21 @@ export default async function TransactionsPage({
   const orderBy = buildTransactionOrderBy(query);
   const skip = (query.page - 1) * query.pageSize;
 
-  const [items, total, allMatching, partyRows, accountRows] = await Promise.all([
+  const foldCharges =
+    !showCharges && !(query.category && query.category.length > 0) && !query.search;
+  const listWhere: Prisma.FinanceTransactionWhereInput = foldCharges
+    ? { AND: [where, { category: { not: 'BANK_CHARGES' } }] }
+    : where;
+
+  const [items, total, allMatching, partyRows, accountRows, folded] = await Promise.all([
     prisma.financeTransaction.findMany({
-      where,
+      where: listWhere,
       select: financeTransactionProjection,
       orderBy,
       skip,
       take: query.pageSize,
     }),
-    prisma.financeTransaction.count({ where }),
+    prisma.financeTransaction.count({ where: listWhere }),
     prisma.financeTransaction.findMany({
       where,
       select: { direction: true, category: true, amount: true },
@@ -135,9 +149,29 @@ export default async function TransactionsPage({
       orderBy: [{ name: 'asc' }],
       take: 200,
     }),
+    foldCharges
+      ? prisma.financeTransaction.aggregate({
+          where: { AND: [where, { category: 'BANK_CHARGES' }] },
+          _count: { _all: true },
+          _sum: { amount: true },
+        })
+      : Promise.resolve(null),
   ]);
 
+  // Totals always cover every matching row, folded or not.
   const totals = summarizeRows(allMatching);
+  const foldedCount = folded?._count._all ?? 0;
+  const foldedAmount = folded?._sum.amount ?? 0;
+  const chargesLink = (show: boolean) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(searchParams ?? {})) {
+      const val = coerceParam(v);
+      if (val !== undefined && k !== 'charges' && k !== 'page') qs.set(k, val);
+    }
+    if (show) qs.set('charges', 'show');
+    const str = qs.toString();
+    return str ? `/finance/transactions?${str}` : '/finance/transactions';
+  };
   const singleCategory =
     query.category && query.category.length === 1 ? query.category[0] : '';
 
@@ -216,10 +250,30 @@ export default async function TransactionsPage({
           }
           delta={{
             direction: 'flat',
-            label: `${total} row${total === 1 ? '' : 's'}`,
+            label: `${total + foldedCount} row${total + foldedCount === 1 ? '' : 's'}`,
           }}
         />
       </div>
+
+      {foldedCount > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+          <span>
+            <span className="font-medium">{foldedCount} bank charge line{foldedCount === 1 ? '' : 's'}</span>{' '}
+            <span className="text-muted-foreground">
+              (IMPS / AMB fees and their GST) · {formatInr(foldedAmount)} — counted in the totals above, folded here.
+            </span>
+          </span>
+          <Link href={chargesLink(true)} className="font-medium text-primary hover:underline">
+            Show them
+          </Link>
+        </div>
+      ) : showCharges ? (
+        <div className="text-right text-xs">
+          <Link href={chargesLink(false)} className="font-medium text-primary hover:underline">
+            Fold bank charges
+          </Link>
+        </div>
+      ) : null}
 
       <TransactionsTable
         items={items as unknown as FinanceTransactionPublic[]}
@@ -241,6 +295,7 @@ export default async function TransactionsPage({
           search: query.search,
           sortBy: query.sortBy !== 'date' ? query.sortBy : undefined,
           sortDir: query.sortDir !== 'desc' ? query.sortDir : undefined,
+          charges: showCharges ? 'show' : undefined,
         }}
       />
     </div>

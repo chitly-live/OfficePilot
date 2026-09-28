@@ -1,22 +1,34 @@
 'use client';
 
 /**
- * Sub-navigation for the Finance module: Overview · Transactions ·
- * Parties · Accounts. Client component only for the active-state
- * highlight via `usePathname()`.
+ * Sub-navigation for the Finance module: Overview · Dues · Transactions ·
+ * Parties · Accounts · Assets · Reconcile · GST. Client component only for
+ * the active-state highlight via `usePathname()`. Wraps on narrow screens.
  */
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowLeftRight, LayoutDashboard, Landmark, ReceiptText, Users } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  CalendarClock,
+  CheckCheck,
+  LayoutDashboard,
+  Landmark,
+  Package,
+  ReceiptText,
+  Users,
+} from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
 const ITEMS = [
   { href: '/finance', label: 'Overview', icon: LayoutDashboard, exact: true },
+  { href: '/finance/dues', label: 'Dues', icon: CalendarClock },
   { href: '/finance/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { href: '/finance/parties', label: 'Parties', icon: Users },
   { href: '/finance/accounts', label: 'Accounts', icon: Landmark },
+  { href: '/finance/assets', label: 'Assets', icon: Package },
+  { href: '/finance/reconcile', label: 'Reconcile', icon: CheckCheck },
   { href: '/finance/gst', label: 'GST', icon: ReceiptText },
 ] as const;
 

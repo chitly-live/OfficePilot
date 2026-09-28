@@ -192,7 +192,7 @@ function addSummarySheet(wb: ExcelJS.Workbook, report: FinanceReport): void {
   categoryTable('Expense by category', report.expenseByCategory);
 
   // -- Financing -----------------------------------------------------------
-  sectionTitle(ws, 'Loans & card settlements (cash moved, not profit or loss)');
+  sectionTitle(ws, 'Loans, card settlements & assets (cash moved, not profit or loss)');
   const fHead = ws.addRow(['Flow', '', 'Amount']);
   styleHeaderRow(fHead, 3);
   fHead.getCell(3).alignment = { horizontal: 'right' };
@@ -201,6 +201,7 @@ function addSummarySheet(wb: ExcelJS.Workbook, report: FinanceReport): void {
     ['Investment received', report.financing.investmentReceived],
     ['Loan repayments', report.financing.loanRepaid],
     ['Card repayments (settling borrowed cards)', report.financing.cardRepaid],
+    ['Asset purchases (capital)', report.financing.assetPurchases],
   ];
   flows.forEach(([label, value], i) => {
     const row = ws.addRow([label, '', value]);
@@ -297,7 +298,7 @@ function addTransactionsSheet(wb: ExcelJS.Workbook, report: FinanceReport): void
     const row = ws.addRow([
       t.date,
       t.direction === 'IN' ? 'Money in' : 'Money out',
-      t.kind === 'FINANCING' ? `${t.categoryLabel} (not P&L)` : t.categoryLabel,
+      t.kind !== 'OPERATING' ? `${t.categoryLabel} (not P&L)` : t.categoryLabel,
       t.productName,
       t.description,
       t.partyName,

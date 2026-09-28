@@ -6,6 +6,10 @@
  * PATCH re-validates the direction ↔ category pairing and the
  * original-amount ↔ currency pairing against the MERGED row, since the
  * client may send only one half of each pair.
+ *
+ * Both PATCH and DELETE refuse rows dated inside a closed month (old date
+ * and new date). A row settles one card (`settlesAccountId`) or carries a
+ * split (`cardSplit`), never both; leaving CARD_REPAYMENT clears both.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -19,8 +23,10 @@ import {
   requireFinanceReadSession,
 } from '@/lib/api-helpers';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
-import { categoryDirection, categoryLabel } from '@/lib/finance';
+import { categoryDirection, categoryLabel, formatInr, round2 } from '@/lib/finance';
+import { validateCardSplit, writeCardSplit, type CardSplitPart } from '@/lib/finance-guards';
 import { resolveTransactionRefs } from '@/lib/finance-refs';
+import { assertDatesOpen } from '@/lib/month-close';
 import {
   financeTransactionProjection,
   financeTransactionUpdateSchema,
@@ -68,6 +74,7 @@ export async function PATCH(
       where: { id },
       select: {
         id: true,
+        date: true,
         direction: true,
         category: true,
         amount: true,
@@ -76,11 +83,30 @@ export async function PATCH(
         partyId: true,
         viaPartyId: true,
         accountId: true,
+        settlesAccountId: true,
         description: true,
+        cardAllocations: { select: { accountId: true, amount: true } },
+        gstReturnAsCash: { select: { month: true } },
+        gstReturnAsItc: { select: { month: true } },
       },
     });
     if (!existing) {
       return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    }
+
+    await assertDatesOpen(prisma, [existing.date, input.date]);
+
+    // Rows a GST return generated are owned by that return: the money fields
+    // change on the GST page, or the two would disagree.
+    const gstMonth = existing.gstReturnAsCash?.month ?? existing.gstReturnAsItc?.month;
+    if (gstMonth) {
+      const labelOnly = new Set(['description', 'reference', 'productId']);
+      const moneyFields = Object.keys(input).filter((k) => !labelOnly.has(k));
+      if (moneyFields.length > 0) {
+        throw new BadRequestError(
+          `This row belongs to the GST return for ${gstMonth}. Change the amounts on the GST page.`,
+        );
+      }
     }
 
     // Direction ↔ category must agree on the merged row.
@@ -149,10 +175,41 @@ export async function PATCH(
     if (input.settlesAccountId !== undefined) data.settlesAccountId = input.settlesAccountId;
     if (input.productId !== undefined) data.productId = input.productId;
 
-    const updated = await prisma.financeTransaction.update({
-      where: { id },
-      data,
-      select: financeTransactionProjection,
+    // Card settlement: work out the split this row should end up with.
+    // `undefined` = leave the stored split alone.
+    const nextAmount = input.amount ?? existing.amount;
+    const hadSplit = existing.cardAllocations.length > 0;
+    let nextSplit: CardSplitPart[] | undefined;
+    if (nextCategory !== 'CARD_REPAYMENT') {
+      // No longer a repayment, so it settles nothing.
+      data.settlesAccountId = null;
+      if (hadSplit) nextSplit = [];
+    } else if (input.cardSplit !== undefined) {
+      nextSplit = input.cardSplit ?? [];
+      if (nextSplit.length > 0) {
+        await validateCardSplit(
+          prisma,
+          { category: nextCategory, direction: nextDirection, amount: nextAmount },
+          nextSplit,
+        );
+        data.settlesAccountId = null;
+      }
+    } else if (hadSplit && input.settlesAccountId) {
+      // Switched to settling a single card.
+      nextSplit = [];
+    } else if (hadSplit && round2(nextAmount) !== round2(existing.amount)) {
+      throw new BadRequestError(
+        `This payment is split across cards. Change the split too so it adds up to ${formatInr(nextAmount)}.`,
+      );
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.financeTransaction.update({ where: { id }, data, select: { id: true } });
+      if (nextSplit !== undefined) await writeCardSplit(tx, id, nextSplit);
+      return tx.financeTransaction.findUniqueOrThrow({
+        where: { id },
+        select: financeTransactionProjection,
+      });
     });
 
     try {
@@ -198,15 +255,26 @@ export async function DELETE(
       where: { id },
       select: {
         id: true,
+        date: true,
         direction: true,
         category: true,
         amount: true,
         description: true,
         party: { select: { name: true } },
+        gstReturnAsCash: { select: { month: true } },
+        gstReturnAsItc: { select: { month: true } },
       },
     });
     if (!existing) {
       return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    }
+
+    await assertDatesOpen(prisma, [existing.date]);
+    const gstMonth = existing.gstReturnAsCash?.month ?? existing.gstReturnAsItc?.month;
+    if (gstMonth) {
+      throw new BadRequestError(
+        `This row belongs to the GST return for ${gstMonth}. Change or remove it on the GST page.`,
+      );
     }
 
     await prisma.financeTransaction.delete({ where: { id: existing.id } });

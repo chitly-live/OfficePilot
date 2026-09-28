@@ -252,25 +252,36 @@ export function AccountsTable({ items, parties, emptyAction, scopeLabel, readOnl
                   Available {formatInr(position.available)}
                 </div>
               ) : null}
+              {card.lastBill && card.lastBill.billed > 0 ? (
+                <div className="text-xs">
+                  <span className="text-muted-foreground">
+                    Bill of {formatDateUtc(card.lastBill.statementDate)}:{' '}
+                  </span>
+                  {card.lastBill.remaining > 0 ? (
+                    <span
+                      className={cn(
+                        'font-medium',
+                        card.lastBill.daysToDue !== null && card.lastBill.daysToDue <= 5
+                          ? 'text-status-red'
+                          : 'text-foreground',
+                      )}
+                    >
+                      {formatInr(card.lastBill.remaining)} to pay
+                      {card.lastBill.dueDate ? ` by ${formatDateUtc(card.lastBill.dueDate)}` : ''}
+                    </span>
+                  ) : (
+                    <span className="text-status-green">
+                      {formatInr(card.lastBill.billed)} paid
+                    </span>
+                  )}
+                </div>
+              ) : null}
               {cycle ? (
                 <div className="text-xs text-muted-foreground">
-                  Cycle {formatDateUtc(cycle.from)} – {formatDateUtc(cycle.to)} ·{' '}
-                  {formatInr(position.cycleSpend)} spent · statement{' '}
+                  This cycle {formatDateUtc(cycle.from)} – {formatDateUtc(cycle.to)} ·{' '}
+                  {formatInr(position.cycleSpend)} spent · next statement{' '}
                   {formatDateUtc(cycle.statementDate)}
-                  {cycle.dueDate ? (
-                    <>
-                      {' '}· due{' '}
-                      <span
-                        className={cn(
-                          card.daysToDue !== null && card.daysToDue <= 5
-                            ? 'font-medium text-status-red'
-                            : undefined,
-                        )}
-                      >
-                        {formatDateUtc(cycle.dueDate)}
-                      </span>
-                    </>
-                  ) : null}
+                  {cycle.dueDate ? <> (due {formatDateUtc(cycle.dueDate)})</> : null}
                 </div>
               ) : null}
             </div>

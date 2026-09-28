@@ -39,7 +39,8 @@ export function describeApiError(
 
 export type JsonResult<T> =
   | { ok: true; status: number; data: T }
-  | { ok: false; status: number; message: string };
+  /** `body` is the parsed error payload, for callers that act on its details. */
+  | { ok: false; status: number; message: string; body?: ApiErrorBody & Record<string, unknown> };
 
 /**
  * `fetch` + JSON + error normalisation. Never throws; network failures
@@ -78,6 +79,9 @@ export async function requestJson<T = unknown>(
       ok: false,
       status: res.status,
       message: describeApiError(body as ApiErrorBody | null, res.status),
+      ...(body && typeof body === 'object'
+        ? { body: body as ApiErrorBody & Record<string, unknown> }
+        : {}),
     };
   }
   return { ok: true, status: res.status, data: body as T };

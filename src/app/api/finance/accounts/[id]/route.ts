@@ -19,6 +19,7 @@ import {
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
 import { resolveOwnerParty } from '@/lib/finance-refs';
 import { loadAccountBalances } from '@/lib/finance-summary';
+import { assertNoClosedMonths } from '@/lib/month-close';
 import {
   financeAccountProjection,
   financeAccountUpdateSchema,
@@ -69,10 +70,19 @@ export async function PATCH(
 
     const existing = await prisma.financeAccount.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, openingBalance: true },
     });
     if (!existing) {
       return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    }
+
+    // The form re-sends the opening balance on every save; only a real change
+    // moves the balances of closed months.
+    if (
+      input.openingBalance !== undefined &&
+      Math.abs(input.openingBalance - existing.openingBalance) >= 0.005
+    ) {
+      await assertNoClosedMonths(prisma, 'Changing the opening balance');
     }
 
     if (input.ownerPartyId) {

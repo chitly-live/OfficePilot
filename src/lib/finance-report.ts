@@ -206,6 +206,8 @@ export interface ReportFinancing {
   investmentReceived: number;
   loanRepaid: number;
   cardRepaid: number;
+  /** Cash spent buying things we keep (CAPITAL) — not an expense. */
+  assetPurchases: number;
 }
 
 export interface FinanceReport {
@@ -266,7 +268,7 @@ export function assembleFinanceReport(input: AssembleInput): FinanceReport {
   const expenseByCategory = byCategory.filter(
     (c) => c.direction === 'OUT' && c.kind === 'OPERATING',
   );
-  const financingByCategory = byCategory.filter((c) => c.kind === 'FINANCING');
+  const financingByCategory = byCategory.filter((c) => c.kind !== 'OPERATING');
 
   const catTotal = (cat: FinanceCategory): number =>
     financingByCategory.find((c) => c.category === cat)?.amount ?? 0;
@@ -275,6 +277,7 @@ export function assembleFinanceReport(input: AssembleInput): FinanceReport {
     investmentReceived: catTotal('INVESTMENT_RECEIVED'),
     loanRepaid: catTotal('LOAN_REPAYMENT'),
     cardRepaid: catTotal('CARD_REPAYMENT'),
+    assetPurchases: catTotal('ASSET_PURCHASE'),
   };
 
   // Accounts: opening = balance before the window; closing = opening + in − out.

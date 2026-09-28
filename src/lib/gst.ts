@@ -38,6 +38,11 @@ export function defaultGstPaymentDate(month: string): Date {
   return new Date(Date.UTC(y, m, 20)); // m is 1-based → next month is index m
 }
 
+/** The date the return's ledger rows carry: when it was paid, else the due date. */
+export function gstLedgerDate(month: string, paidOn: Date | null | undefined): Date {
+  return paidOn ?? defaultGstPaymentDate(month);
+}
+
 /** Find-or-create the Government (GST) party. */
 export async function ensureGstParty(db: Tx | PrismaClient, createdById: string): Promise<string> {
   const existing = await db.financeParty.findFirst({
@@ -84,7 +89,7 @@ export async function syncGstLedgerRows(
 ): Promise<{ cashTransactionId: string | null; itcTransactionId: string | null }> {
   const partyId = await ensureGstParty(tx, createdById);
   const productId = await firstActiveProductId(tx);
-  const date = figures.paidOn ?? defaultGstPaymentDate(figures.month);
+  const date = gstLedgerDate(figures.month, figures.paidOn);
 
   async function upsertRow(
     id: string | null,

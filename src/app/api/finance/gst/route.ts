@@ -18,7 +18,8 @@ import {
 } from '@/lib/api-helpers';
 import { prisma } from '@/lib/db';
 import { monthLabel } from '@/lib/finance';
-import { itcByHead, itcRunningBalances, syncGstLedgerRows } from '@/lib/gst';
+import { gstLedgerDate, itcByHead, itcRunningBalances, syncGstLedgerRows } from '@/lib/gst';
+import { assertDatesOpen } from '@/lib/month-close';
 import { gstReturnCreateSchema, gstReturnProjection, type GstReturnPublic } from '@/lib/schemas/gst';
 
 export const runtime = 'nodejs';
@@ -66,6 +67,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         select: { id: true },
       });
       if (!acct) throw new BadRequestError('Account not found');
+    }
+
+    // The return writes ledger rows only for money that moved (ITC used / cash).
+    if (input.itcUsed > 0 || input.cashPaid > 0) {
+      await assertDatesOpen(prisma, [gstLedgerDate(input.month, input.paidOn)]);
     }
 
     let created;

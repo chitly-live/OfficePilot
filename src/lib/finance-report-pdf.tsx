@@ -304,7 +304,7 @@ function ReportDocument({ report }: { report: FinanceReport }) {
         <Text style={styles.section}>Expense by category</Text>
         <Table cols={catCols} rows={catRows(report.expenseByCategory)} total={catTotal(report.expenseByCategory)} emptyText="No expenses in this period" />
 
-        <Text style={styles.section}>Loans &amp; card settlements (cash moved, not profit or loss)</Text>
+        <Text style={styles.section}>Loans, card settlements &amp; assets (cash moved, not profit or loss)</Text>
         <Table
           cols={[
             { key: 'label', label: 'Flow', width: 380 },
@@ -315,6 +315,7 @@ function ReportDocument({ report }: { report: FinanceReport }) {
             { label: 'Investment received', amount: money(report.financing.investmentReceived) },
             { label: 'Loan repayments', amount: money(report.financing.loanRepaid) },
             { label: 'Card repayments (settling borrowed cards)', amount: money(report.financing.cardRepaid) },
+            { label: 'Asset purchases (capital)', amount: money(report.financing.assetPurchases) },
           ]}
         />
 
@@ -404,7 +405,7 @@ function ReportDocument({ report }: { report: FinanceReport }) {
           rows={report.transactions.map((t) => ({
             date: formatDateUtc(t.date),
             type: { text: t.direction === 'IN' ? 'In' : 'Out', tone: t.direction === 'IN' ? 'green' : 'red' },
-            cat: `${t.kind === 'FINANCING' ? `${t.categoryLabel} (not P&L)` : t.categoryLabel}${
+            cat: `${t.kind !== 'OPERATING' ? `${t.categoryLabel} (not P&L)` : t.categoryLabel}${
               t.productName && !report.scopeLabel ? `
 ${t.productName}` : ''
             }`,

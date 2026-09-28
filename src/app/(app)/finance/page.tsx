@@ -37,6 +37,8 @@ import {
 import { CARD_HEALTH_LABELS, type CardHealth } from '@/lib/credit-card';
 import { loadAccountAmb } from '@/lib/finance-amb';
 import { loadCardOverview } from '@/lib/finance-cards';
+import { loadDues, loadPosition } from '@/lib/dues';
+import { latestClosedMonth, loadMonthCloses } from '@/lib/month-close';
 import { loadSalaryBoard } from '@/lib/finance-employee';
 import { loadFinanceSummary } from '@/lib/finance-summary';
 import { scopeLabel, scopeValue } from '@/lib/products';
@@ -116,6 +118,17 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
   // Average monthly balance only makes sense for the month in progress.
   const amb = isCurrentMonthKey(monthKey) ? await loadAccountAmb(prisma, monthKey) : [];
   const ambAlerts = amb.filter((a) => a.status === 'AT_RISK' || a.status === 'SHORT');
+  // Company-wide money position and what is due soon — not month-scoped.
+  const [position, dues, closes, lockedThrough] = await Promise.all([
+    loadPosition(prisma),
+    loadDues(prisma),
+    loadMonthCloses(prisma),
+    latestClosedMonth(prisma),
+  ]);
+  const urgent = dues.filter(
+    (d) => (d.status === 'OVERDUE' || d.status === 'DUE_SOON') && d.kind !== 'AMB',
+  );
+  const drifted = closes.filter((c) => c.drift.length > 0);
   const cardTone: Record<CardHealth, 'green' | 'amber' | 'red' | 'neutral'> = {
     OK: 'green',
     HIGH: 'amber',
@@ -172,6 +185,59 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
       />
 
       <FinanceNav />
+
+      {drifted.length > 0 ? (
+        <div className="rounded-md border border-status-red/40 bg-status-red/5 px-3 py-2 text-sm">
+          <span className="font-medium text-status-red">A closed month has changed.</span>{' '}
+          {drifted.map((c) => monthLabel(c.month)).join(', ')} no longer adds up to the balance recorded when it was
+          closed.{' '}
+          <Link href="/finance/reconcile" className="font-medium text-primary hover:underline">
+            Check →
+          </Link>
+        </div>
+      ) : null}
+
+      {/* Money position — all accounts, all time */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="Cash in our accounts" value={formatInr(position.cash)} />
+        <StatCard label="We owe" value={<span className="text-status-red">{formatInr(position.owed)}</span>} />
+        <StatCard
+          label="Net position (cash − owed)"
+          value={
+            <span className={cn(position.net < 0 ? 'text-status-red' : 'text-status-green')}>
+              {formatInr(position.net)}
+            </span>
+          }
+        />
+      </div>
+
+      {urgent.length > 0 ? (
+        <div className="rounded-md border border-status-amber/40 bg-status-amber/5 px-3 py-2 text-sm">
+          <p className="font-medium">
+            {urgent.length} payment{urgent.length === 1 ? '' : 's'} due this week or overdue
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {urgent.slice(0, 5).map((d) => (
+              <li key={d.key} className="flex flex-wrap justify-between gap-x-4">
+                <span>
+                  <span className={cn(d.status === 'OVERDUE' && 'font-medium text-status-red')}>{d.title}</span>
+                  {d.dueDate ? <span className="text-muted-foreground"> · {formatDateUtc(d.dueDate)}</span> : null}
+                </span>
+                <span className="tabular-nums">{d.amount !== null ? formatInr(d.amount) : ''}</span>
+              </li>
+            ))}
+          </ul>
+          <Link href="/finance/dues" className="mt-1 inline-block font-medium text-primary hover:underline">
+            All dues →
+          </Link>
+        </div>
+      ) : null}
+
+      {lockedThrough ? (
+        <p className="text-xs text-muted-foreground">
+          Books locked up to {monthLabel(lockedThrough)} (checked against the bank).
+        </p>
+      ) : null}
 
       {ambAlerts.length > 0 ? (
         <div className="space-y-1 rounded-md border border-status-amber/40 bg-status-amber/5 px-3 py-2 text-sm">
@@ -393,22 +459,27 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
                       <Link href="/finance/accounts" className="font-medium hover:underline">
                         {c.name}
                       </Link>
-                      {c.cycle?.dueDate ? (
+                      {c.lastBill && c.lastBill.remaining > 0 ? (
                         <span
                           className={cn(
                             'ml-2 text-xs',
-                            c.daysToDue !== null && c.daysToDue <= 5
+                            c.lastBill.daysToDue !== null && c.lastBill.daysToDue <= 5
                               ? 'font-medium text-status-red'
                               : 'text-muted-foreground',
                           )}
                         >
-                          bill {formatDateUtc(c.cycle.statementDate)} · due{' '}
-                          {formatDateUtc(c.cycle.dueDate)}
-                          {c.daysToDue !== null
-                            ? c.daysToDue < 0
-                              ? ` (${-c.daysToDue}d overdue)`
-                              : ` (${c.daysToDue}d)`
+                          {formatInr(c.lastBill.remaining)} of the{' '}
+                          {formatDateUtc(c.lastBill.statementDate)} bill due
+                          {c.lastBill.dueDate ? ` ${formatDateUtc(c.lastBill.dueDate)}` : ''}
+                          {c.lastBill.daysToDue !== null
+                            ? c.lastBill.daysToDue < 0
+                              ? ` (${-c.lastBill.daysToDue}d overdue)`
+                              : ` (${c.lastBill.daysToDue}d)`
                             : ''}
+                        </span>
+                      ) : c.lastBill && c.lastBill.billed > 0 ? (
+                        <span className="ml-2 text-xs text-status-green">
+                          {formatDateUtc(c.lastBill.statementDate)} bill paid
                         </span>
                       ) : null}
                     </div>

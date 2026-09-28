@@ -5,16 +5,18 @@
 
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Copy, Package } from 'lucide-react';
 
 import { auth } from '@/lib/auth';
 import { canManageFinance } from '@/lib/permissions';
 import { prisma } from '@/lib/db';
+import { isLocked, latestClosedMonth } from '@/lib/month-close';
 import { loadProducts } from '@/lib/products-server';
 import {
   FINANCE_CATEGORY_META,
   formatDateUtc,
   formatInr,
+  monthLabel,
   toMonthKey,
 } from '@/lib/finance';
 import {
@@ -64,7 +66,7 @@ export default async function TransactionDetailPage({ params }: PageProps) {
     redirect(session.role === 'ACCOUNTANT' ? '/finance/transactions' : '/dashboard');
   }
 
-  const [row, partyRows, accountRows, productRows] = await Promise.all([
+  const [row, partyRows, accountRows, productRows, linkedAsset, lockedThrough] = await Promise.all([
     prisma.financeTransaction.findUnique({
       where: { id: params.id },
       select: financeTransactionProjection,
@@ -86,6 +88,8 @@ export default async function TransactionDetailPage({ params }: PageProps) {
       take: 200,
     }),
     loadProducts(prisma, { includeInactive: true }),
+    prisma.asset.findUnique({ where: { transactionId: params.id }, select: { id: true, name: true } }),
+    latestClosedMonth(prisma),
   ]);
   if (!row) notFound();
 
@@ -113,6 +117,7 @@ export default async function TransactionDetailPage({ params }: PageProps) {
   const label =
     txn.description || txn.party?.name || meta.label;
   const returnTo = `/finance/transactions?month=${toMonthKey(new Date(txn.date))}`;
+  const locked = isLocked(new Date(txn.date), lockedThrough);
 
   return (
     <div className="space-y-6">
@@ -138,6 +143,22 @@ export default async function TransactionDetailPage({ params }: PageProps) {
                 <span>Back</span>
               </Link>
             </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/finance/transactions/new?copy=${txn.id}`}>
+                <Copy className="h-4 w-4" aria-hidden="true" />
+                <span>Repeat</span>
+              </Link>
+            </Button>
+            {txn.direction === 'OUT' ? (
+              <Button asChild variant="outline" size="sm">
+                <Link
+                  href={linkedAsset ? `/finance/assets/${linkedAsset.id}` : `/finance/assets?transaction=${txn.id}`}
+                >
+                  <Package className="h-4 w-4" aria-hidden="true" />
+                  <span>{linkedAsset ? `Asset: ${linkedAsset.name}` : 'Record as asset'}</span>
+                </Link>
+              </Button>
+            ) : null}
             <DeleteTransactionButton
               transactionId={txn.id}
               label={label}
@@ -148,6 +169,17 @@ export default async function TransactionDetailPage({ params }: PageProps) {
       />
 
       <FinanceNav />
+
+      {locked && lockedThrough ? (
+        <div className="max-w-3xl rounded-md border border-status-amber/50 bg-status-amber/5 px-3 py-2 text-sm">
+          <span className="font-medium">This entry is in a closed month.</span> The books are locked up to{' '}
+          {monthLabel(lockedThrough)}, so it cannot be changed or deleted. Reopen the month on the{' '}
+          <Link href="/finance/reconcile" className="font-medium text-primary hover:underline">
+            Reconcile
+          </Link>{' '}
+          page first.
+        </div>
+      ) : null}
 
       {txn.cardAllocations.length > 0 ? (
         <Card className="max-w-3xl border-status-blue/40">
@@ -215,6 +247,7 @@ export default async function TransactionDetailPage({ params }: PageProps) {
               originalCurrency: txn.originalCurrency ?? 'USD',
               dueDate: toDateInputValue(txn.dueDate),
             }}
+            initialSplit={txn.cardAllocations.map((a) => ({ accountId: a.account.id, amount: a.amount }))}
             returnTo={returnTo}
           />
         </CardContent>

@@ -236,9 +236,27 @@ const accountTypeValues = Object.values(FinanceAccountType) as [
   ...FinanceAccountType[],
 ];
 
+/** Shared with the other Finance schemas (assets). */
+export {
+  amountField as financeAmountField,
+  dateField as financeDateField,
+  idField as financeIdField,
+  nameField as financeNameField,
+  notesField as financeNotesField,
+};
+
 // ---------------------------------------------------------------------------
 // Transactions
 // ---------------------------------------------------------------------------
+
+/**
+ * One payment that cleared several cards: each card's share. Sent instead of
+ * `settlesAccountId`; the shares must add up to the payment to the paisa
+ * (checked in `validateCardSplit`, which also knows the payment amount).
+ */
+const cardSplitField = z
+  .array(z.object({ accountId: idField, amount: amountField }))
+  .max(10, 'A split can cover at most 10 cards');
 
 const transactionBase = {
   date: dateField,
@@ -258,6 +276,10 @@ const transactionBase = {
   settlesAccountId: idField.optional(),
   /** Product this row belongs to; omit / null = company-level. */
   productId: idField.optional(),
+  /** CARD_REPAYMENT only: per-card shares when one payment cleared several cards. */
+  cardSplit: cardSplitField.optional(),
+  /** Set after the user has seen the "looks like a duplicate" warning. */
+  confirmDuplicate: z.boolean().optional(),
 };
 
 /**
@@ -283,6 +305,10 @@ export const financeTransactionCreateSchema = z
   .refine((v) => !v.viaPartyId || v.viaPartyId !== v.partyId, {
     message: 'Routed-via party must be different from the party',
     path: ['viaPartyId'],
+  })
+  .refine((v) => !(v.settlesAccountId && v.cardSplit && v.cardSplit.length > 0), {
+    message: 'Pick one card to settle, or split across cards — not both',
+    path: ['cardSplit'],
   });
 
 export type FinanceTransactionCreateInput = z.infer<
@@ -310,10 +336,19 @@ export const financeTransactionUpdateSchema = z
     accountId: idField.nullable().optional(),
     settlesAccountId: idField.nullable().optional(),
     productId: idField.nullable().optional(),
+    /** Replace the split; `[]` or null removes it. */
+    cardSplit: cardSplitField.nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'At least one field must be provided',
   })
+  .refine(
+    (v) => !(v.settlesAccountId && v.cardSplit && v.cardSplit.length > 0),
+    {
+      message: 'Pick one card to settle, or split across cards — not both',
+      path: ['cardSplit'],
+    },
+  )
   .refine(
     (value) =>
       !value.viaPartyId || !value.partyId || value.viaPartyId !== value.partyId,

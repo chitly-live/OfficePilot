@@ -154,6 +154,17 @@ export const ACTIVITY_ACTIONS = {
   GST_RETURN_SAVED: 'finance.gst_return_saved',
   GST_RETURN_DELETED: 'finance.gst_return_deleted',
 
+  // Month close (books locked after checking against the bank)
+  FINANCE_MONTH_CLOSED: 'finance.month_closed',
+  FINANCE_MONTH_REOPENED: 'finance.month_reopened',
+
+  // Assets (things we bought and still own)
+  ASSET_CREATED: 'asset.created',
+  ASSET_UPDATED: 'asset.updated',
+  ASSET_DELETED: 'asset.deleted',
+  /** Handed to someone / returned. Metadata: `entityName`, `toName`. */
+  ASSET_ASSIGNED: 'asset.assigned',
+
   // Products (business lines under the company)
   PRODUCT_CREATED: 'product.created',
   PRODUCT_UPDATED: 'product.updated',
@@ -690,6 +701,22 @@ export function formatActivity(activity: FormattableActivity): string {
       return `${userName} saved the GST return for ${entityName}`;
     case ACTIVITY_ACTIONS.GST_RETURN_DELETED:
       return `${userName} deleted the GST return for ${entityName}`;
+    case ACTIVITY_ACTIONS.FINANCE_MONTH_CLOSED:
+      return `${userName} closed the books for ${entityName}`;
+    case ACTIVITY_ACTIONS.FINANCE_MONTH_REOPENED:
+      return `${userName} reopened ${entityName}`;
+    case ACTIVITY_ACTIONS.ASSET_CREATED:
+      return `${userName} added asset ${entityName}`;
+    case ACTIVITY_ACTIONS.ASSET_UPDATED:
+      return `${userName} updated asset ${entityName}`;
+    case ACTIVITY_ACTIONS.ASSET_DELETED:
+      return `${userName} deleted asset ${entityName}`;
+    case ACTIVITY_ACTIONS.ASSET_ASSIGNED: {
+      const toName = readString(meta, 'toName');
+      return toName
+        ? `${userName} handed ${entityName} to ${toName}`
+        : `${userName} took ${entityName} back`;
+    }
     case ACTIVITY_ACTIONS.PRODUCT_CREATED:
       return `${userName} added product ${entityName}`;
     case ACTIVITY_ACTIONS.PRODUCT_UPDATED:

@@ -5,6 +5,10 @@
  * Admin-only (the Finance module is gated in `src/middleware.ts` and
  * re-checked here via `requireAdminSession`). Every write is audited to
  * `ActivityLog` on a best-effort basis.
+ *
+ * POST refuses a row dated inside a closed month, and answers 409
+ * `possible_duplicate` when the row matches one already entered — the form
+ * shows the match and re-sends with `confirmDuplicate: true` if it is real.
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -19,11 +23,10 @@ import {
 } from '@/lib/api-helpers';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
 import { categoryLabel, summarizeRows } from '@/lib/finance';
-import {
-  buildTransactionOrderBy,
-  buildTransactionWhere,
-} from '@/lib/finance-query';
+import { assertNotDuplicate, validateCardSplit, writeCardSplit } from '@/lib/finance-guards';
+import { buildTransactionOrderBy, buildTransactionWhere } from '@/lib/finance-query';
 import { resolveTransactionRefs } from '@/lib/finance-refs';
+import { assertDatesOpen } from '@/lib/month-close';
 import {
   financeTransactionCreateSchema,
   financeTransactionListQuerySchema,
@@ -37,10 +40,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     await requireFinanceReadSession();
-    const query = parseSearchParams(
-      req.nextUrl.searchParams,
-      financeTransactionListQuerySchema,
-    );
+    const query = parseSearchParams(req.nextUrl.searchParams, financeTransactionListQuerySchema);
 
     const where = buildTransactionWhere(query);
     const orderBy = buildTransactionOrderBy(query);
@@ -88,35 +88,57 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       productId: input.productId,
     });
 
-    const created = await prisma.financeTransaction.create({
-      data: {
+    await assertDatesOpen(prisma, [input.date]);
+
+    const split = input.cardSplit ?? [];
+    if (split.length > 0) {
+      await validateCardSplit(prisma, input, split);
+    }
+
+    if (input.confirmDuplicate !== true) {
+      await assertNotDuplicate(prisma, {
         date: input.date,
         direction: input.direction,
-        category: input.category,
         amount: input.amount,
-        ...(input.originalAmount !== undefined
-          ? { originalAmount: input.originalAmount }
-          : {}),
-        ...(input.originalCurrency !== undefined
-          ? { originalCurrency: input.originalCurrency }
-          : {}),
-        ...(input.description !== undefined && input.description !== ''
-          ? { description: input.description }
-          : {}),
-        ...(input.reference !== undefined && input.reference !== ''
-          ? { reference: input.reference }
-          : {}),
-        ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
-        ...(input.partyId !== undefined ? { partyId: input.partyId } : {}),
-        ...(input.viaPartyId !== undefined ? { viaPartyId: input.viaPartyId } : {}),
-        ...(input.accountId !== undefined ? { accountId: input.accountId } : {}),
-        ...(input.settlesAccountId !== undefined
-          ? { settlesAccountId: input.settlesAccountId }
-          : {}),
-        ...(input.productId !== undefined ? { productId: input.productId } : {}),
-        createdById: session.userId,
-      },
-      select: financeTransactionProjection,
+        accountId: input.accountId ?? null,
+        reference: input.reference ?? null,
+      });
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      const row = await tx.financeTransaction.create({
+        data: {
+          date: input.date,
+          direction: input.direction,
+          category: input.category,
+          amount: input.amount,
+          ...(input.originalAmount !== undefined ? { originalAmount: input.originalAmount } : {}),
+          ...(input.originalCurrency !== undefined
+            ? { originalCurrency: input.originalCurrency }
+            : {}),
+          ...(input.description !== undefined && input.description !== ''
+            ? { description: input.description }
+            : {}),
+          ...(input.reference !== undefined && input.reference !== ''
+            ? { reference: input.reference }
+            : {}),
+          ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+          ...(input.partyId !== undefined ? { partyId: input.partyId } : {}),
+          ...(input.viaPartyId !== undefined ? { viaPartyId: input.viaPartyId } : {}),
+          ...(input.accountId !== undefined ? { accountId: input.accountId } : {}),
+          ...(input.settlesAccountId !== undefined
+            ? { settlesAccountId: input.settlesAccountId }
+            : {}),
+          ...(input.productId !== undefined ? { productId: input.productId } : {}),
+          createdById: session.userId,
+        },
+        select: { id: true },
+      });
+      if (split.length > 0) await writeCardSplit(tx, row.id, split);
+      return tx.financeTransaction.findUniqueOrThrow({
+        where: { id: row.id },
+        select: financeTransactionProjection,
+      });
     });
 
     try {

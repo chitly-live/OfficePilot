@@ -96,11 +96,20 @@ describe('FINANCE_CATEGORY_META', () => {
     expect(ins.some((c) => outs.includes(c))).toBe(false);
   });
 
-  it('flags exactly the financing categories as non-operating', () => {
-    const financing = ALL_FINANCE_CATEGORIES.filter((c) => !isOperatingCategory(c)).sort();
-    expect(financing).toEqual(
-      ['CARD_REPAYMENT', 'INVESTMENT_RECEIVED', 'LOAN_RECEIVED', 'LOAN_REPAYMENT'].sort(),
+  it('flags exactly the financing and capital categories as non-operating', () => {
+    const nonOperating = ALL_FINANCE_CATEGORIES.filter((c) => !isOperatingCategory(c)).sort();
+    expect(nonOperating).toEqual(
+      ['ASSET_PURCHASE', 'CARD_REPAYMENT', 'INVESTMENT_RECEIVED', 'LOAN_RECEIVED', 'LOAN_REPAYMENT'].sort(),
     );
+    expect(FINANCE_CATEGORY_META.ASSET_PURCHASE).toMatchObject({ direction: 'OUT', kind: 'CAPITAL' });
+  });
+
+  it('an asset purchase moves cash but is not an expense', () => {
+    const t = summarizeRows([
+      { direction: 'OUT', category: 'ASSET_PURCHASE', amount: 45000 },
+      { direction: 'OUT', category: 'OFFICE', amount: 500 },
+    ]);
+    expect(t).toMatchObject({ cashOut: 45500, expense: 500, net: -500 });
   });
 
   it('every category has a non-empty label and hint', () => {
