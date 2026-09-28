@@ -11,6 +11,12 @@ import Link from 'next/link';
 
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { FINANCE_CATEGORY_META, formatDateUtc, formatInr } from '@/lib/finance';
+import {
+  buildPartyLedger,
+  hasRunningBalance,
+  sumPartyLedger,
+  type PartyLedgerSource,
+} from '@/lib/party-ledger';
 import type { FinanceTransactionPublic } from '@/lib/schemas/finance';
 import { cn } from '@/lib/utils';
 
@@ -18,18 +24,39 @@ import { directionTone } from '../../finance-ui';
 
 export interface PartyLedgerProps {
   rows: FinanceTransactionPublic[];
+  /** Ids of accounts this party owns — spend there is money of theirs we used. */
+  theirAccountIds: string[];
+  /** All-time "we owe" from computePartyBalance, so the balance column is right. */
+  closingOwed: number;
   /** Shown when there is nothing to list. */
   emptyText: string;
   readOnly?: boolean;
 }
 
-export function PartyLedger({ rows, emptyText, readOnly = false }: PartyLedgerProps) {
+export function PartyLedger({
+  rows,
+  theirAccountIds,
+  closingOwed,
+  emptyText,
+  readOnly = false,
+}: PartyLedgerProps) {
   if (rows.length === 0) {
     return <p className="py-6 text-center text-sm text-muted-foreground">{emptyText}</p>;
   }
 
-  const totalIn = rows.reduce((s, r) => (r.direction === 'IN' ? s + r.amount : s), 0);
-  const totalOut = rows.reduce((s, r) => (r.direction === 'OUT' ? s + r.amount : s), 0);
+  const owned = new Set(theirAccountIds);
+  const source: PartyLedgerSource[] = rows.map((r) => ({
+    id: r.id,
+    date: r.date,
+    direction: r.direction,
+    category: r.category,
+    amount: r.amount,
+    onTheirAccount: r.accountId !== null && owned.has(r.accountId),
+  }));
+  const lines = buildPartyLedger(source, closingOwed);
+  const totals = sumPartyLedger(lines.values());
+  const showBalance = hasRunningBalance(totals);
+  const showReceived = totals.received > 0;
 
   return (
     <div className="overflow-x-auto">
@@ -39,8 +66,14 @@ export function PartyLedger({ rows, emptyText, readOnly = false }: PartyLedgerPr
             <th className="py-2 pr-3 font-medium">Date</th>
             <th className="py-2 pr-3 font-medium">Description</th>
             <th className="py-2 pr-3 font-medium">Account</th>
-            <th className="py-2 pr-3 text-right font-medium text-status-green">In</th>
-            <th className="py-2 pr-3 text-right font-medium text-status-red">Out</th>
+            <th className="py-2 pr-3 text-right font-medium text-status-red">Used</th>
+            <th className="py-2 pr-3 text-right font-medium text-status-green">Paid</th>
+            {showReceived ? (
+              <th className="py-2 pr-3 text-right font-medium text-status-green">Received</th>
+            ) : null}
+            {showBalance ? (
+              <th className="py-2 pr-3 text-right font-medium">Balance</th>
+            ) : null}
             {readOnly ? null : (
               <th className="py-2 text-right font-medium">
                 <span className="sr-only">Actions</span>
@@ -52,6 +85,7 @@ export function PartyLedger({ rows, emptyText, readOnly = false }: PartyLedgerPr
           {rows.map((t) => {
             const meta = FINANCE_CATEGORY_META[t.category];
             const primary = t.description || t.party?.name || meta.label;
+            const line = lines.get(t.id);
             return (
               <tr key={t.id}>
                 <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground">
@@ -80,12 +114,22 @@ export function PartyLedger({ rows, emptyText, readOnly = false }: PartyLedgerPr
                   </div>
                 </td>
                 <td className="py-2 pr-3 text-muted-foreground">{t.account?.name ?? '—'}</td>
-                <td className="py-2 pr-3 text-right tabular-nums text-status-green">
-                  {t.direction === 'IN' ? formatInr(t.amount) : ''}
-                </td>
                 <td className="py-2 pr-3 text-right tabular-nums text-status-red">
-                  {t.direction === 'OUT' ? formatInr(t.amount) : ''}
+                  {line && line.used > 0 ? formatInr(line.used) : ''}
                 </td>
+                <td className="py-2 pr-3 text-right tabular-nums text-status-green">
+                  {line && line.paid > 0 ? formatInr(line.paid) : ''}
+                </td>
+                {showReceived ? (
+                  <td className="py-2 pr-3 text-right tabular-nums text-status-green">
+                    {line && line.received > 0 ? formatInr(line.received) : ''}
+                  </td>
+                ) : null}
+                {showBalance ? (
+                  <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">
+                    {line ? formatInr(line.balanceAfter) : ''}
+                  </td>
+                ) : null}
                 {readOnly ? null : (
                   <td className="py-2 text-right">
                     <Link
@@ -105,12 +149,20 @@ export function PartyLedger({ rows, emptyText, readOnly = false }: PartyLedgerPr
             <td className="py-2 pr-3" colSpan={3}>
               Total
             </td>
-            <td className="py-2 pr-3 text-right tabular-nums text-status-green">
-              {formatInr(totalIn)}
-            </td>
             <td className="py-2 pr-3 text-right tabular-nums text-status-red">
-              {formatInr(totalOut)}
+              {formatInr(totals.used)}
             </td>
+            <td className="py-2 pr-3 text-right tabular-nums text-status-green">
+              {formatInr(totals.paid)}
+            </td>
+            {showReceived ? (
+              <td className="py-2 pr-3 text-right tabular-nums text-status-green">
+                {formatInr(totals.received)}
+              </td>
+            ) : null}
+            {showBalance ? (
+              <td className="py-2 pr-3 text-right tabular-nums">{formatInr(closingOwed)}</td>
+            ) : null}
             {readOnly ? null : <td />}
           </tr>
         </tfoot>

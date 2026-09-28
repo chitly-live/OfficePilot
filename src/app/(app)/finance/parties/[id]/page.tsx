@@ -309,6 +309,8 @@ export default async function PartyDetailPage({ params }: PageProps) {
             <CardContent>
               <PartyLedger
                 rows={workingRows}
+                theirAccountIds={accounts.map((a) => a.id)}
+                closingOwed={balance.owed}
                 emptyText={`Nothing recorded with ${party.name} yet.`}
                 readOnly={!canEdit}
               />
