@@ -43,7 +43,7 @@ import { cn } from '@/lib/utils';
 
 import { FinanceNav } from '../../finance-nav';
 import { PARTY_TYPE_TONE } from '../../finance-ui';
-import { TransactionsTable } from '../../transactions/transactions-table';
+import { CardAdjustments, PartyLedger } from './party-ledger';
 import { DeletePartyButton } from '../delete-party-button';
 import { PartyDialog } from '../party-dialog';
 
@@ -136,6 +136,10 @@ export default async function PartyDetailPage({ params }: PageProps) {
   })();
 
   const party = maskContacts(partyRow as unknown as FinancePartyPublic, session.role);
+  // Card settlements get their own section; the working ledger keeps the rest.
+  const allRows = ledgerRows as unknown as FinanceTransactionPublic[];
+  const cardSettlements = allRows.filter((r) => r.category === 'CARD_REPAYMENT');
+  const workingRows = allRows.filter((r) => r.category !== 'CARD_REPAYMENT');
   const balance = await loadPartyBalance(prisma, party.id, scope);
   const passThrough = computePassThrough(routedRows, party.id);
   const ledger = ledgerRows as unknown as FinanceTransactionPublic[];
@@ -296,20 +300,41 @@ export default async function PartyDetailPage({ params }: PageProps) {
             <CardHeader>
               <CardTitle className="text-base">Ledger</CardTitle>
               <CardDescription>
-                Every transaction linked to {party.name}
-                {accounts.length > 0 ? ' or made through their accounts' : ''}.
+                Money in and money out with {party.name}
+                {accounts.length > 0 ? ' or through their accounts' : ''}.
+                {cardSettlements.length > 0 ? ' Card settlements are listed separately below.' : ''}
                 {ledger.length === LEDGER_LIMIT ? ` Showing the latest ${LEDGER_LIMIT}.` : ''}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <TransactionsTable
-                items={ledger}
-                showParty={false}
-                newHref={quickLinks[0]?.href ?? `${newBase}&direction=OUT`}
+              <PartyLedger
+                rows={workingRows}
+                emptyText={`Nothing recorded with ${party.name} yet.`}
                 readOnly={!canEdit}
               />
             </CardContent>
           </Card>
+
+          {cardSettlements.length > 0 || balance.cardSpend > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Card adjustments</CardTitle>
+                <CardDescription>
+                  What we have paid back against spend on {party.name}&apos;s cards. One bank
+                  transfer stays one row here, exactly as the statement shows it; if it cleared
+                  more than one card, the per-card shares are listed beside it.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CardAdjustments
+                  rows={cardSettlements}
+                  cardSpend={balance.cardSpend}
+                  cardOutstanding={balance.cardOutstanding}
+                  readOnly={!canEdit}
+                />
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
 
         <aside className="space-y-4">
