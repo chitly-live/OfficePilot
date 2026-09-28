@@ -149,6 +149,40 @@ export default async function TransactionDetailPage({ params }: PageProps) {
 
       <FinanceNav />
 
+      {txn.cardAllocations.length > 0 ? (
+        <Card className="max-w-3xl border-status-blue/40">
+          <CardHeader>
+            <CardTitle className="text-base">This one payment cleared several cards</CardTitle>
+            <CardDescription>
+              The bank shows a single transfer, so the ledger keeps a single row. The split
+              below is how it was applied — it changes each card&apos;s outstanding without
+              touching this entry.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y">
+              {txn.cardAllocations.map((a) => (
+                <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                  <div className="min-w-0">
+                    <span className="font-medium text-foreground">{a.account.name}</span>
+                    {a.note ? (
+                      <span className="ml-2 text-xs text-muted-foreground">{a.note}</span>
+                    ) : null}
+                  </div>
+                  <span className="shrink-0 font-semibold tabular-nums">{formatInr(a.amount)}</span>
+                </li>
+              ))}
+              <li className="flex items-center justify-between gap-2 pt-2 text-sm">
+                <span className="text-muted-foreground">Total applied</span>
+                <span className="font-semibold tabular-nums">
+                  {formatInr(txn.cardAllocations.reduce((sum, a) => sum + a.amount, 0))}
+                </span>
+              </li>
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card className="max-w-3xl">
         <CardHeader>
           <CardTitle>Edit transaction</CardTitle>

@@ -595,6 +595,11 @@ export const financeTransactionProjection = {
   settlesAccount: {
     select: { id: true, name: true },
   },
+  /** Per-card split when this one payment cleared several cards. */
+  cardAllocations: {
+    select: { id: true, amount: true, note: true, account: { select: { id: true, name: true } } },
+    orderBy: { amount: 'desc' },
+  },
   product: {
     select: { id: true, name: true, slug: true, color: true },
   },
@@ -628,6 +633,12 @@ export type FinanceTransactionPublic = {
   party: { id: string; name: string; type: FinancePartyType } | null;
   viaParty: { id: string; name: string; type: FinancePartyType } | null;
   settlesAccount: { id: string; name: string } | null;
+  cardAllocations: {
+    id: string;
+    amount: number;
+    note: string | null;
+    account: { id: string; name: string };
+  }[];
   product: { id: string; name: string; slug: string; color: string | null } | null;
   account: {
     id: string;

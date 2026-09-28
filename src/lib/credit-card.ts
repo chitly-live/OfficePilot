@@ -87,6 +87,13 @@ export interface CardLedgerRow {
   onCard: boolean;
   /** Row is a repayment that settles this card. */
   settlesCard: boolean;
+  /**
+   * Rupees of this row that clear THIS card. Set when one bank payment was
+   * split across several cards (see `CardRepaymentAllocation`); the ledger
+   * row itself stays whole so it still matches the bank statement line by
+   * line. Falls back to the full amount when `settlesCard` is true.
+   */
+  settlesAmount?: number;
 }
 
 export interface CardPosition {
@@ -125,9 +132,13 @@ export function computeCardPosition(
         refunds += amount;
       }
     }
-    if (r.settlesCard && r.direction === 'OUT') {
-      repaid += amount;
-      if (inCycle(r.date)) cycleRepaid += amount;
+    const settled =
+      r.direction === 'OUT'
+        ? (r.settlesAmount ?? (r.settlesCard ? amount : 0))
+        : 0;
+    if (settled > 0) {
+      repaid += settled;
+      if (inCycle(r.date)) cycleRepaid += settled;
     }
   }
   const outstanding = round2(spend - refunds - repaid);

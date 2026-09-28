@@ -527,9 +527,11 @@ model FinanceAccount {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  transactions FinanceTransaction[] @relation("FinanceTransactionAccount")
+  transactions FinanceTransaction[]      @relation("FinanceTransactionAccount")
   /// Card repayments that settle this card's bill (`settlesAccountId`).
-  settlements  FinanceTransaction[] @relation("FinanceTransactionSettles")
+  settlements  FinanceTransaction[]      @relation("FinanceTransactionSettles")
+  /// Shares of a repayment that cleared this card (one payment, many cards).
+  allocations  CardRepaymentAllocation[]
   gstReturns   GstReturn[]
 
   @@index([type])
@@ -576,8 +578,11 @@ model FinanceTransaction {
   updatedAt DateTime @updatedAt
 
   /// Set on the two TAX rows a monthly GST return generates.
-  gstReturnAsCash GstReturn? @relation("GstReturnCash")
-  gstReturnAsItc  GstReturn? @relation("GstReturnItc")
+  gstReturnAsCash GstReturn?                @relation("GstReturnCash")
+  gstReturnAsItc  GstReturn?                @relation("GstReturnItc")
+  /// Per-card split when ONE payment clears more than one card. The ledger
+  /// row always mirrors the bank statement line; the split lives here.
+  cardAllocations CardRepaymentAllocation[]
 
   @@index([date])
   @@index([direction])
@@ -587,6 +592,32 @@ model FinanceTransaction {
   @@index([accountId])
   @@index([settlesAccountId])
   @@index([productId])
+}
+
+/// How much of one repayment went to which card.
+///
+/// A bank transfer is a single line on the statement, so the ledger keeps a
+/// single `FinanceTransaction` for it. When that one transfer clears two or
+/// more card bills, each share is recorded here instead of splitting the
+/// payment — the statement and the ledger stay line-for-line identical.
+///
+/// `FinanceTransaction.settlesAccountId` remains the shortcut for the common
+/// single-card case; card positions count both, never the same rupee twice.
+model CardRepaymentAllocation {
+  id            String             @id @default(cuid())
+  transactionId String
+  transaction   FinanceTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  accountId     String
+  account       FinanceAccount     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  /// INR share of the parent payment. All shares must sum to <= the payment.
+  amount        Float
+  note          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([transactionId, accountId])
+  @@index([accountId])
 }
 
 /// One GST return per month (GSTR-3B). The accountant records how the

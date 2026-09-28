@@ -60,13 +60,21 @@ export async function loadCardOverview(
 
   const ids = cards.map((c) => c.id);
   const rows = await db.financeTransaction.findMany({
-    where: { OR: [{ accountId: { in: ids } }, { settlesAccountId: { in: ids } }] },
+    where: {
+      OR: [
+        { accountId: { in: ids } },
+        { settlesAccountId: { in: ids } },
+        { cardAllocations: { some: { accountId: { in: ids } } } },
+      ],
+    },
     select: {
+      id: true,
       date: true,
       direction: true,
       amount: true,
       accountId: true,
       settlesAccountId: true,
+      cardAllocations: { select: { accountId: true, amount: true } },
     },
   });
 
@@ -78,27 +86,48 @@ export async function loadCardOverview(
     const scoped = await db.financeTransaction.findMany({
       where: {
         ...productWhere(scope),
-        OR: [{ accountId: { in: ids } }, { settlesAccountId: { in: ids } }],
+        OR: [
+          { accountId: { in: ids } },
+          { settlesAccountId: { in: ids } },
+          { cardAllocations: { some: { accountId: { in: ids } } } },
+        ],
       },
-      select: { accountId: true, settlesAccountId: true },
+      select: {
+        accountId: true,
+        settlesAccountId: true,
+        cardAllocations: { select: { accountId: true } },
+      },
     });
     visible = new Set<string>();
     for (const r of scoped) {
       if (r.accountId) visible.add(r.accountId);
       if (r.settlesAccountId) visible.add(r.settlesAccountId);
+      for (const a of r.cardAllocations) visible.add(a.accountId);
     }
   }
 
   return cards.filter((card) => visible === null || visible.has(card.id)).map((card) => {
     const ledger: CardLedgerRow[] = rows
-      .filter((r) => r.accountId === card.id || r.settlesAccountId === card.id)
-      .map((r) => ({
-        date: r.date,
-        direction: r.direction,
-        amount: r.amount,
-        onCard: r.accountId === card.id,
-        settlesCard: r.settlesAccountId === card.id,
-      }));
+      .filter(
+        (r) =>
+          r.accountId === card.id ||
+          r.settlesAccountId === card.id ||
+          r.cardAllocations.some((a) => a.accountId === card.id),
+      )
+      .map((r) => {
+        // A payment either carries an explicit per-card split or the simple
+        // settlesAccountId shortcut — never both, so no rupee counts twice.
+        const share = r.cardAllocations.find((a) => a.accountId === card.id);
+        const split = r.cardAllocations.length > 0;
+        return {
+          date: r.date,
+          direction: r.direction,
+          amount: r.amount,
+          onCard: r.accountId === card.id,
+          settlesCard: !split && r.settlesAccountId === card.id,
+          ...(split ? { settlesAmount: share ? share.amount : 0 } : {}),
+        };
+      });
     const cycle = card.billingDay ? currentBillingCycle(card.billingDay, now, card.dueDay) : null;
     const position = computeCardPosition(ledger, card.creditLimit, cycle);
     const daysToDue = cycle?.dueDate

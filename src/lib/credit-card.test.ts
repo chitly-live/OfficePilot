@@ -98,3 +98,68 @@ describe('computeCardPosition', () => {
     expect(none.cycleSpend).toBe(0);
   });
 });
+
+describe('computeCardPosition — one payment split across cards', () => {
+  // A single 70,000 bank transfer cleared two cards: 37,222 to this one and
+  // 32,778 to another. The ledger keeps ONE row of 70,000 (it must match the
+  // bank statement line), so only this card's share may be counted here.
+  const split = (share: number) =>
+    computeCardPosition(
+      [
+        { direction: 'OUT', amount: 50000, date: at('2026-09-05'), onCard: true, settlesCard: false },
+        {
+          direction: 'OUT',
+          amount: 70000,
+          date: at('2026-09-21'),
+          onCard: false,
+          settlesCard: false,
+          settlesAmount: share,
+        },
+      ],
+      60000,
+    );
+
+  it('counts only the share, never the whole payment', () => {
+    const pos = split(37222);
+    expect(pos.spend).toBe(50000);
+    expect(pos.repaid).toBe(37222);
+    expect(pos.outstanding).toBe(12778);
+    expect(pos.available).toBe(47222);
+  });
+
+  it('a zero share leaves the card untouched', () => {
+    const pos = split(0);
+    expect(pos.repaid).toBe(0);
+    expect(pos.outstanding).toBe(50000);
+  });
+
+  it('settlesAmount wins over the settlesCard shortcut', () => {
+    const pos = computeCardPosition(
+      [
+        { direction: 'OUT', amount: 50000, date: at('2026-09-05'), onCard: true, settlesCard: false },
+        {
+          direction: 'OUT',
+          amount: 70000,
+          date: at('2026-09-21'),
+          onCard: false,
+          settlesCard: true,
+          settlesAmount: 37222,
+        },
+      ],
+      60000,
+    );
+    expect(pos.repaid).toBe(37222);
+  });
+
+  it('an IN row never settles anything', () => {
+    const pos = computeCardPosition(
+      [
+        { direction: 'OUT', amount: 5000, date: at('2026-09-05'), onCard: true, settlesCard: false },
+        { direction: 'IN', amount: 1000, date: at('2026-09-06'), onCard: false, settlesCard: true, settlesAmount: 1000 },
+      ],
+      60000,
+    );
+    expect(pos.repaid).toBe(0);
+    expect(pos.outstanding).toBe(5000);
+  });
+});
