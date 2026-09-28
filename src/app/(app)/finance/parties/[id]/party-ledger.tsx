@@ -173,136 +173,92 @@ export function PartyLedger({
 
 // ---------------------------------------------------------------------------
 
+export interface CardAdjustmentsCard {
+  id: string;
+  name: string;
+  creditLimit: number | null;
+  spend: number;
+  repaid: number;
+  outstanding: number;
+}
+
 export interface CardAdjustmentsProps {
-  rows: FinanceTransactionPublic[];
-  /** All-time spend on this party's cards, for the closing line. */
-  cardSpend: number;
-  cardOutstanding: number;
-  readOnly?: boolean;
+  cards: CardAdjustmentsCard[];
 }
 
 /**
- * Settlements against a card owner, kept apart from the working ledger.
- * A single payment that cleared several cards shows its per-card split
- * underneath — the payment itself stays one row, as the bank shows it.
+ * Card-by-card reconciliation for a card owner. The individual transfers stay
+ * in the ledger above — this is the per-card view of the same money, so no
+ * payment is ever listed twice.
  */
-export function CardAdjustments({
-  rows,
-  cardSpend,
-  cardOutstanding,
-  readOnly = false,
-}: CardAdjustmentsProps) {
-  if (rows.length === 0) {
+export function CardAdjustments({ cards }: CardAdjustmentsProps) {
+  if (cards.length === 0) {
     return (
       <p className="py-6 text-center text-sm text-muted-foreground">
-        No card settlements recorded yet.
+        Nothing spent on their cards yet.
       </p>
     );
   }
 
-  const settled = rows.reduce((s, r) => s + r.amount, 0);
+  const total = cards.reduce(
+    (acc, c) => ({
+      spend: acc.spend + c.spend,
+      repaid: acc.repaid + c.repaid,
+      outstanding: acc.outstanding + c.outstanding,
+    }),
+    { spend: 0, repaid: 0, outstanding: 0 },
+  );
 
   return (
-    <div className="space-y-3">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <th className="py-2 pr-3 font-medium">Date</th>
-              <th className="py-2 pr-3 font-medium">Paid from</th>
-              <th className="py-2 pr-3 font-medium">Applied to</th>
-              <th className="py-2 pr-3 text-right font-medium">Amount</th>
-              {readOnly ? null : (
-                <th className="py-2 text-right font-medium">
-                  <span className="sr-only">Actions</span>
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {rows.map((t) => {
-              const split = t.cardAllocations ?? [];
-              return (
-                <tr key={t.id}>
-                  <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground">
-                    {formatDateUtc(t.date)}
-                  </td>
-                  <td className="py-2 pr-3 text-muted-foreground">
-                    {t.account?.name ?? '—'}
-                    {t.viaParty ? (
-                      <span className="ml-1 text-[11px] text-status-amber">
-                        via {t.viaParty.name}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="py-2 pr-3">
-                    {split.length > 0 ? (
-                      <ul className="space-y-0.5">
-                        {split.map((a) => (
-                          <li key={a.id} className="flex items-baseline gap-2">
-                            <span className="text-foreground">{a.account.name}</span>
-                            <span className="tabular-nums text-muted-foreground">
-                              {formatInr(a.amount)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : t.settlesAccount ? (
-                      <span className="text-foreground">{t.settlesAccount.name}</span>
-                    ) : (
-                      <span className="text-status-amber">not assigned</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3 text-right font-semibold tabular-nums">
-                    {formatInr(t.amount)}
-                  </td>
-                  {readOnly ? null : (
-                    <td className="py-2 text-right">
-                      <Link
-                        href={`/finance/transactions/${t.id}`}
-                        className="text-xs font-medium text-primary hover:underline"
-                      >
-                        Edit
-                      </Link>
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            <tr className="border-t-2 font-semibold">
-              <td className="py-2 pr-3" colSpan={3}>
-                Total settled
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <th className="py-2 pr-3 font-medium">Card</th>
+            <th className="py-2 pr-3 text-right font-medium text-status-red">Used</th>
+            <th className="py-2 pr-3 text-right font-medium text-status-green">Settled</th>
+            <th className="py-2 pr-3 text-right font-medium">Still owed</th>
+            <th className="py-2 text-right font-medium">Limit left</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {cards.map((c) => (
+            <tr key={c.id}>
+              <td className="py-2 pr-3 font-medium text-foreground">{c.name}</td>
+              <td className="py-2 pr-3 text-right tabular-nums text-status-red">
+                {formatInr(c.spend)}
               </td>
-              <td className="py-2 pr-3 text-right tabular-nums">{formatInr(settled)}</td>
-              {readOnly ? null : <td />}
+              <td className="py-2 pr-3 text-right tabular-nums text-status-green">
+                {c.repaid > 0 ? formatInr(c.repaid) : ''}
+              </td>
+              <td
+                className={cn(
+                  'py-2 pr-3 text-right font-semibold tabular-nums',
+                  c.outstanding > 0 ? 'text-status-red' : 'text-status-green',
+                )}
+              >
+                {formatInr(c.outstanding)}
+              </td>
+              <td className="py-2 text-right tabular-nums text-muted-foreground">
+                {c.creditLimit ? formatInr(c.creditLimit - c.outstanding) : '—'}
+              </td>
             </tr>
-          </tfoot>
-        </table>
-      </div>
-
-      <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-muted-foreground">Spent on their cards</span>
-          <span className="tabular-nums">{formatInr(cardSpend)}</span>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-muted-foreground">Settled so far</span>
-          <span className="tabular-nums">− {formatInr(settled)}</span>
-        </div>
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 border-t pt-1">
-          <span className="font-medium text-foreground">Still on their cards</span>
-          <span
-            className={cn(
-              'font-semibold tabular-nums',
-              cardOutstanding > 0 ? 'text-status-red' : 'text-status-green',
-            )}
-          >
-            {formatInr(cardOutstanding)}
-          </span>
-        </div>
-      </div>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t-2 font-semibold">
+            <td className="py-2 pr-3">Total</td>
+            <td className="py-2 pr-3 text-right tabular-nums text-status-red">
+              {formatInr(total.spend)}
+            </td>
+            <td className="py-2 pr-3 text-right tabular-nums text-status-green">
+              {formatInr(total.repaid)}
+            </td>
+            <td className="py-2 pr-3 text-right tabular-nums">{formatInr(total.outstanding)}</td>
+            <td />
+          </tr>
+        </tfoot>
+      </table>
     </div>
   );
 }

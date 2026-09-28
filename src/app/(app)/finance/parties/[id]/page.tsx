@@ -19,6 +19,7 @@ import {
   computePassThrough,
   formatInr,
 } from '@/lib/finance';
+import { loadCardOverview } from '@/lib/finance-cards';
 import { loadPartyBalance } from '@/lib/finance-summary';
 import { productWhere, scopeLabel } from '@/lib/products';
 import { getProductContext, loadProducts } from '@/lib/products-server';
@@ -77,7 +78,8 @@ export default async function PartyDetailPage({ params }: PageProps) {
   const scope = productContext.scope;
   const scopeText = scopeLabel(scope, productContext.companyShort);
 
-  const [partyRow, ledgerRows, accounts, routedRows, productRows, productSplitRows] = await Promise.all([
+  const [partyRow, ledgerRows, accounts, routedRows, productRows, cardOverview, productSplitRows] =
+    await Promise.all([
     prisma.financeParty.findUnique({
       where: { id: params.id },
       select: financePartyProjection,
@@ -106,6 +108,7 @@ export default async function PartyDetailPage({ params }: PageProps) {
       select: { direction: true, category: true, amount: true, viaPartyId: true },
     }),
     loadProducts(prisma),
+    loadCardOverview(prisma, new Date(), scope),
     // Product split: rows linked to this party or made on their accounts,
     // inside the header scope like everything else on this page.
     prisma.financeTransaction.findMany({
@@ -136,10 +139,23 @@ export default async function PartyDetailPage({ params }: PageProps) {
   })();
 
   const party = maskContacts(partyRow as unknown as FinancePartyPublic, session.role);
-  // Card settlements get their own section; the working ledger keeps the rest.
+  // Every row stays in the ledger so the Paid column and the running balance
+  // are complete. The card section below is a per-card view of the same money.
   const allRows = ledgerRows as unknown as FinanceTransactionPublic[];
-  const cardSettlements = allRows.filter((r) => r.category === 'CARD_REPAYMENT');
-  const workingRows = allRows.filter((r) => r.category !== 'CARD_REPAYMENT');
+  // Their cards, with spend / settled / outstanding already worked out.
+  const ownedIds = new Set(accounts.map((a) => a.id));
+  const theirCards = cardOverview
+    .filter((c) => ownedIds.has(c.id))
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      creditLimit: c.creditLimit,
+      spend: c.position.spend - c.position.refunds,
+      repaid: c.position.repaid,
+      outstanding: c.position.outstanding,
+    }))
+    .filter((c) => c.spend > 0 || c.repaid > 0)
+    .sort((a, b) => b.outstanding - a.outstanding);
   const balance = await loadPartyBalance(prisma, party.id, scope);
   const passThrough = computePassThrough(routedRows, party.id);
   const ledger = ledgerRows as unknown as FinanceTransactionPublic[];
@@ -300,15 +316,14 @@ export default async function PartyDetailPage({ params }: PageProps) {
             <CardHeader>
               <CardTitle className="text-base">Ledger</CardTitle>
               <CardDescription>
-                Money in and money out with {party.name}
-                {accounts.length > 0 ? ' or through their accounts' : ''}.
-                {cardSettlements.length > 0 ? ' Card settlements are listed separately below.' : ''}
+                How much of {party.name}&apos;s money we used, how much we have paid back, and
+                what is still owed after each line.
                 {ledger.length === LEDGER_LIMIT ? ` Showing the latest ${LEDGER_LIMIT}.` : ''}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <PartyLedger
-                rows={workingRows}
+                rows={allRows}
                 theirAccountIds={accounts.map((a) => a.id)}
                 closingOwed={balance.owed}
                 emptyText={`Nothing recorded with ${party.name} yet.`}
@@ -317,23 +332,19 @@ export default async function PartyDetailPage({ params }: PageProps) {
             </CardContent>
           </Card>
 
-          {cardSettlements.length > 0 || balance.cardSpend > 0 ? (
+          {theirCards.length > 0 ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Card adjustments</CardTitle>
                 <CardDescription>
-                  What we have paid back against spend on {party.name}&apos;s cards. One bank
-                  transfer stays one row here, exactly as the statement shows it; if it cleared
-                  more than one card, the per-card shares are listed beside it.
+                  The same money seen card by card. Every transfer is listed once, in the
+                  ledger above; this shows which card each one cleared and what is left on
+                  each. A payment that settled two cards counts against both, split the way
+                  it was actually applied.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <CardAdjustments
-                  rows={cardSettlements}
-                  cardSpend={balance.cardSpend}
-                  cardOutstanding={balance.cardOutstanding}
-                  readOnly={!canEdit}
-                />
+                <CardAdjustments cards={theirCards} />
               </CardContent>
             </Card>
           ) : null}
