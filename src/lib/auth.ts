@@ -241,6 +241,7 @@ export const authConfig: NextAuthConfig = {
             role: true,
             moduleAccess: true,
             passwordChangedAt: true,
+            sessionsRevokedAt: true,
           },
         });
 
@@ -257,10 +258,24 @@ export const authConfig: NextAuthConfig = {
 
         // The password changed after this session signed in (self-service
         // reset or admin edit) → this session is no longer trusted.
+        // Tokens minted before the sign-in time was recorded carry none;
+        // treat them as older than any password change or revocation.
+        const signedInAt = typeof token.auth === 'number' ? token.auth : 0;
         if (
           dbUser.passwordChangedAt !== null &&
-          typeof token.auth === 'number' &&
-          dbUser.passwordChangedAt.getTime() > token.auth
+          dbUser.passwordChangedAt.getTime() > signedInAt
+        ) {
+          delete token.userId;
+          token.deactivated = true;
+          return token;
+        }
+
+        // Role or module access changed after this session signed in. The
+        // middleware only sees what the cookie carries, so the session has
+        // to end for the new permissions to apply everywhere.
+        if (
+          dbUser.sessionsRevokedAt !== null &&
+          dbUser.sessionsRevokedAt.getTime() > signedInAt
         ) {
           delete token.userId;
           token.deactivated = true;

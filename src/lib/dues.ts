@@ -15,7 +15,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 import { renewalState } from '@/lib/assets';
-import { lastStatement, statementBill } from '@/lib/credit-card';
+import { computeCardPosition, lastStatement, statementBill } from '@/lib/credit-card';
 import {
   computeAccountBalance,
   computePartyBalance,
@@ -164,7 +164,8 @@ async function gstDues(db: PrismaClient, today: Date): Promise<DueItem[]> {
           ? `Filed: ${formatInr(r.itcUsed)} set off from ITC, ${formatInr(r.cashPaid)} cash. ITC claimed is not entered yet — the ITC balance is wrong until it is.`
           : `Filed: ${formatInr(r.itcUsed)} set off from ITC, ${formatInr(r.cashPaid)} cash.`,
         amount: 0,
-        dueDate: due,
+        // Filed already; what is missing is data, so no deadline to show.
+        dueDate: incomplete ? null : due,
         status: incomplete ? 'DUE_SOON' : 'DONE',
         doneLabel: 'Filed',
         href: '/finance/gst',
@@ -252,37 +253,71 @@ async function ambDues(db: PrismaClient, today: Date): Promise<DueItem[]> {
     });
 }
 
+/**
+ * What is still owed on each loan from one lender: repayments clear the
+ * oldest loan first. The remainders add up to the lender's outstanding, so
+ * no rupee is shown twice and a repaid loan never comes back.
+ */
+export function allocateLoanRepayments<T extends { date: Date; amount: number }>(
+  loans: readonly T[],
+  repaid: number,
+): (T & { remaining: number })[] {
+  let left = Math.max(0, repaid);
+  return [...loans]
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
+    .map((loan) => {
+      const used = Math.min(left, loan.amount);
+      left = round2(left - used);
+      return { ...loan, remaining: round2(loan.amount - used) };
+    });
+}
+
 async function loanDues(db: PrismaClient, today: Date): Promise<DueItem[]> {
-  const loans = await db.financeTransaction.findMany({
-    where: { category: 'LOAN_RECEIVED', dueDate: { not: null } },
-    select: { id: true, amount: true, dueDate: true, partyId: true, party: { select: { name: true } } },
+  const dated = await db.financeTransaction.findMany({
+    where: { category: 'LOAN_RECEIVED', dueDate: { not: null }, partyId: { not: null } },
+    select: { partyId: true },
   });
-  if (loans.length === 0) return [];
-  const partyIds = Array.from(new Set(loans.map((l) => l.partyId).filter((v): v is string => v !== null)));
+  const partyIds = Array.from(new Set(dated.map((l) => l.partyId!)));
+  if (partyIds.length === 0) return [];
   const rows = await db.financeTransaction.findMany({
-    where: { partyId: { in: partyIds } },
-    select: { direction: true, category: true, amount: true, partyId: true, date: true, account: { select: { ownerPartyId: true } } },
+    where: { partyId: { in: partyIds }, category: { in: ['LOAN_RECEIVED', 'LOAN_REPAYMENT'] } },
+    select: {
+      id: true,
+      date: true,
+      category: true,
+      amount: true,
+      dueDate: true,
+      partyId: true,
+      party: { select: { name: true } },
+    },
   });
-  const ledger = rows.map((r) => ({
-    direction: r.direction,
-    category: r.category,
-    amount: r.amount,
-    partyId: r.partyId,
-    date: r.date,
-    accountOwnerPartyId: r.account?.ownerPartyId ?? null,
-  }));
-  return loans
-    .filter((l) => l.partyId && computePartyBalance(ledger, l.partyId).loanOutstanding > 0)
-    .map((l) => ({
-      key: `loan-${l.id}`,
-      kind: 'LOAN' as const,
-      title: `Repay ${l.party?.name ?? 'loan'}`,
-      detail: `Loan of ${formatInr(l.amount)}.`,
-      amount: computePartyBalance(ledger, l.partyId!).loanOutstanding,
-      dueDate: l.dueDate,
-      status: dueStatus(l.dueDate, false, today),
-      href: `/finance/parties/${l.partyId}`,
-    }));
+
+  const out: DueItem[] = [];
+  for (const partyId of partyIds) {
+    const mine = rows.filter((r) => r.partyId === partyId);
+    const repaid = mine.filter((r) => r.category === 'LOAN_REPAYMENT').reduce((s, r) => s + r.amount, 0);
+    const loans = allocateLoanRepayments(
+      mine.filter((r) => r.category === 'LOAN_RECEIVED'),
+      repaid,
+    );
+    for (const l of loans) {
+      if (!l.dueDate || l.remaining < 0.01) continue;
+      out.push({
+        key: `loan-${l.id}`,
+        kind: 'LOAN',
+        title: `Repay ${l.party?.name ?? 'loan'}`,
+        detail:
+          l.remaining < l.amount
+            ? `Loan of ${formatInr(l.amount)} taken ${formatDateUtc(l.date)}; ${formatInr(round2(l.amount - l.remaining))} repaid.`
+            : `Loan of ${formatInr(l.amount)} taken ${formatDateUtc(l.date)}.`,
+        amount: l.remaining,
+        dueDate: l.dueDate,
+        status: dueStatus(l.dueDate, false, today),
+        href: `/finance/parties/${partyId}`,
+      });
+    }
+  }
+  return out;
 }
 
 export async function loadDues(db: PrismaClient, today: Date = new Date()): Promise<DueItem[]> {
@@ -307,7 +342,8 @@ export interface MoneyPosition {
   cashAccounts: { id: string; name: string; balance: number }[];
   /** Everything we owe parties: card spend not yet repaid + loans. */
   owed: number;
-  owedTo: { partyId: string; name: string; owed: number }[];
+  /** Who / what we owe; `href` is the page that explains the figure. */
+  owedTo: { partyId: string; name: string; owed: number; href: string }[];
   /** cash − owed. Negative = we owe more than we hold. */
   net: number;
   /** Operating income / expense for the last three months (oldest first). */
@@ -327,6 +363,8 @@ export async function loadPosition(db: PrismaClient, today: Date = new Date()): 
         amount: true,
         partyId: true,
         accountId: true,
+        settlesAccountId: true,
+        cardAllocations: { select: { accountId: true, amount: true } },
         account: { select: { ownerPartyId: true } },
       },
     }),
@@ -355,17 +393,35 @@ export async function loadPosition(db: PrismaClient, today: Date = new Date()): 
     accountOwnerPartyId: r.account?.ownerPartyId ?? null,
   }));
   const owedTo = parties
-    .map((p) => ({ partyId: p.id, name: p.name, owed: computePartyBalance(ledger, p.id).owed }))
-    .filter((p) => p.owed > 0)
-    .sort((a, b) => b.owed - a.owed);
+    .map((p) => ({
+      partyId: p.id,
+      name: p.name,
+      owed: computePartyBalance(ledger, p.id).owed,
+      href: `/finance/parties/${p.id}`,
+    }))
+    .filter((p) => p.owed > 0);
+  // A card nobody lent us (a company card) is owed to the bank itself; it
+  // is not in any party's balance, so count its outstanding here.
+  for (const card of accounts.filter((a) => a.type === 'CREDIT_CARD' && !a.ownerPartyId)) {
+    const outstanding = computeCardPosition(cardLedgerRows(card.id, rows), null).outstanding;
+    if (outstanding > 0) {
+      owedTo.push({ partyId: `card:${card.id}`, name: card.name, owed: outstanding, href: '/finance/accounts' });
+    }
+  }
+  owedTo.sort((a, b) => b.owed - a.owed);
   const owed = round2(owedTo.reduce((s, p) => s + p.owed, 0));
 
+  // Last three months, but never before the ledger starts.
+  const first = rows.reduce<Date | null>((min, r) => (!min || r.date < min ? r.date : min), null);
+  const firstMonth = first ? toMonthKey(first) : toMonthKey(today);
   const current = toMonthKey(today);
-  const months = [-2, -1, 0].map((delta) => {
-    const month = shiftMonthKey(current, delta);
-    const t = summarizeRows(ledger.filter((r) => toMonthKey(r.date) === month));
-    return { month, income: t.income, expense: t.expense, net: t.net, complete: delta < 0 };
-  });
+  const months = [-2, -1, 0]
+    .map((delta) => ({ delta, month: shiftMonthKey(current, delta) }))
+    .filter(({ month }) => month >= firstMonth)
+    .map(({ delta, month }) => {
+      const t = summarizeRows(ledger.filter((r) => toMonthKey(r.date) === month));
+      return { month, income: t.income, expense: t.expense, net: t.net, complete: delta < 0 };
+    });
 
   return { cash, cashAccounts, owed, owedTo, net: round2(cash - owed), months };
 }

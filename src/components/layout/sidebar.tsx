@@ -47,6 +47,7 @@ import {
   Settings,
   Share2,
   Sparkles,
+  UserCircle,
   UserPlus,
   Users,
   Wallet,
@@ -200,6 +201,8 @@ function NavLink({ item, active, onNavigate }: NavLinkProps) {
 export interface SidebarProps {
   /** Current user's role — drives admin-only nav visibility. */
   role: Role;
+  /** Signed-in user's id — an employee's "My profile" link points here. */
+  userId?: string;
   /** Per-module whitelist from `session.moduleAccess`. Empty / undefined
    *  means "legacy / full access" per `canAccessModule`. */
   moduleAccess?: string[];
@@ -209,7 +212,7 @@ export interface SidebarProps {
   onNavigate?: () => void;
 }
 
-export function Sidebar({ role, moduleAccess, onNavigate }: SidebarProps) {
+export function Sidebar({ role, userId, moduleAccess, onNavigate }: SidebarProps) {
   const pathname = usePathname() ?? '';
   const isAdmin = role === 'ADMIN';
 
@@ -218,11 +221,16 @@ export function Sidebar({ role, moduleAccess, onNavigate }: SidebarProps) {
   const visiblePrimary = PRIMARY_NAV.filter((item) => {
     if (item.roles) return item.roles.includes(role);
     if (item.adminOnly) return isAdmin;
+    // The employee list is the admin's; an employee gets "My profile" below.
+    if (item.module === 'employees' && !isAdmin) return false;
     if (!item.module) return true;
     return canAccessModule(accessUser, item.module);
   });
-  // Accountants have nothing to configure — Settings is admin/employee only.
-  const visibleSecondary = role === 'ACCOUNTANT' ? [] : SECONDARY_NAV;
+  if (role === 'EMPLOYEE' && userId) {
+    visiblePrimary.push({ href: `/employees/${userId}`, label: 'My profile', icon: UserCircle });
+  }
+  // Settings (company settings, users, products) is admin-only.
+  const visibleSecondary = isAdmin ? SECONDARY_NAV : [];
 
   return (
     <div className="flex h-full flex-col gap-4 px-3 py-4">

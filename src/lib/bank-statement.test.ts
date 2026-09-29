@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  MAX_STATEMENT_LINES,
   StatementParseError,
   parseAmount,
   parseBankStatement,
@@ -130,5 +131,20 @@ describe('parseBankStatement — other layouts', () => {
 
   it('says so when the headings are missing', () => {
     expect(() => parseBankStatement('just,some,text\n1,2,3')).toThrow(StatementParseError);
+  });
+});
+
+describe('parseBankStatement — hostile input', () => {
+  it('reads a padded cell in linear time and refuses it as a date', () => {
+    const started = Date.now();
+    expect(parseStatementDate(`a${' '.repeat(200_000)}b`)).toBeNull();
+    expect(parseAmount(' '.repeat(200_000))).toBeNull();
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it('refuses a file with more lines than any month has', () => {
+    const rows = ['Date,Description,Withdrawal,Deposit'];
+    for (let i = 0; i <= MAX_STATEMENT_LINES; i++) rows.push('2026-09-01,x,1.00,');
+    expect(() => parseBankStatement(rows.join('\n'))).toThrow(/one month at a time/);
   });
 });

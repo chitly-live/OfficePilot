@@ -28,11 +28,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { PostStatus, Prisma, SocialPlatform } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
-import {
-  errorResponse,
-  parseSearchParams,
-  requireSession,
-} from '@/lib/api-helpers';
+import { errorResponse, parseSearchParams, requireModuleSession } from '@/lib/api-helpers';
 import {
   socialPostPublicProjection,
   socialStatsQuerySchema,
@@ -113,7 +109,7 @@ export interface SocialStatsResponse {
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    await requireSession();
+    await requireModuleSession('social');
 
     const query = parseSearchParams(
       req.nextUrl.searchParams,

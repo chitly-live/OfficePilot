@@ -88,7 +88,7 @@ export default async function DuesPage() {
               <ul className="space-y-0.5 text-sm">
                 {position.owedTo.map((p) => (
                   <li key={p.partyId} className="flex justify-between gap-4">
-                    <Link href={`/finance/parties/${p.partyId}`} className="text-muted-foreground hover:underline">
+                    <Link href={p.href} className="text-muted-foreground hover:underline">
                       {p.name}
                     </Link>
                     <span className="tabular-nums">{formatInr(p.owed)}</span>

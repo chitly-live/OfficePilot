@@ -31,17 +31,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { prisma } from '@/lib/db';
-import {
-  errorResponse,
-  parseSearchParams,
-  requireSession,
-} from '@/lib/api-helpers';
+import { canAccessModule } from '@/lib/permissions';
+import { errorResponse, parseSearchParams, requireModuleSession } from '@/lib/api-helpers';
 import {
   campaignLeadsQuerySchema,
 } from '@/lib/schemas/campaigns';
 import {
   leadPublicProjection,
   type LeadPublic,
+  withoutLeadContact,
 } from '@/lib/schemas/leads';
 
 // Force the Node runtime — Prisma is not Edge-compatible.
@@ -68,7 +66,10 @@ export async function GET(
   context: RouteContext,
 ): Promise<NextResponse> {
   try {
-    await requireSession();
+    const session = await requireModuleSession('marketing');
+    // Contact details are Leads-module data; a marketing-only employee sees
+    // that the leads exist, not how to reach them.
+    const canSeeContacts = canAccessModule(session, 'leads');
 
     const { id } = context.params;
     const query = parseSearchParams(
@@ -116,7 +117,7 @@ export async function GET(
     ]);
 
     return NextResponse.json({
-      items: items as unknown as LeadPublic[],
+      items: (canSeeContacts ? items : items.map(withoutLeadContact)) as unknown as LeadPublic[],
       total,
       page: query.page,
       pageSize: query.pageSize,

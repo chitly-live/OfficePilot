@@ -15,7 +15,7 @@ import {
 } from '@/lib/api-helpers';
 import { prisma } from '@/lib/db';
 import { monthLabel } from '@/lib/finance';
-import { deleteGstLedgerRows, gstLedgerDate, syncGstLedgerRows } from '@/lib/gst';
+import { deleteGstLedgerRows, gstLedgerPlan, syncGstLedgerRows } from '@/lib/gst';
 import { assertDatesOpen } from '@/lib/month-close';
 import {
   gstReturnProjection,
@@ -94,30 +94,31 @@ export async function PATCH(req: NextRequest, context: RouteContext): Promise<Ne
       throw new BadRequestError('Enter at least one amount: ITC claimed, ITC used or cash paid');
     }
 
-    // ITC claimed and the head split live only on the return. The ledger
-    // rows move only when the date, cash, ITC used or account change — only
-    // then does a closed month stand in the way.
-    const oldDate = gstLedgerDate(existing.month, existing.paidOn);
-    const newDate = gstLedgerDate(figures.month, figures.paidOn);
-    const ledgerMoves =
-      oldDate.getTime() !== newDate.getTime() ||
-      figures.itcUsed !== existing.itcUsed ||
-      figures.cashPaid !== existing.cashPaid ||
-      figures.cashAccountId !== existing.cashAccountId;
-    if (ledgerMoves) {
-      await assertDatesOpen(prisma, [oldDate, newDate]);
+    // Decide from the ledger rows as they are. When they already match what
+    // the return would write, leave them alone — ITC claimed, the head split
+    // and notes live only on the return. Otherwise every date the rows sit
+    // on (old and new) must be open.
+    const plan = await gstLedgerPlan(
+      prisma,
+      { cashTransactionId: existing.cashTransactionId, itcTransactionId: existing.itcTransactionId },
+      figures,
+    );
+    if (plan.changes) {
+      await assertDatesOpen(prisma, plan.dates);
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const rows = await syncGstLedgerRows(
-        tx,
-        figures,
-        {
-          cashTransactionId: existing.cashTransactionId,
-          itcTransactionId: existing.itcTransactionId,
-        },
-        session.userId,
-      );
+      const rows = plan.changes
+        ? await syncGstLedgerRows(
+            tx,
+            figures,
+            {
+              cashTransactionId: existing.cashTransactionId,
+              itcTransactionId: existing.itcTransactionId,
+            },
+            session.userId,
+          )
+        : { cashTransactionId: existing.cashTransactionId, itcTransactionId: existing.itcTransactionId };
       return tx.gstReturn.update({
         where: { id },
         data: {
@@ -164,8 +165,14 @@ export async function DELETE(_req: NextRequest, context: RouteContext): Promise<
     if (!existing) {
       return NextResponse.json({ error: 'not_found' }, { status: 404 });
     }
-    if (existing.cashTransactionId || existing.itcTransactionId) {
-      await assertDatesOpen(prisma, [gstLedgerDate(existing.month, existing.paidOn)]);
+    // Deleting removes whatever rows the return still has, wherever they sit.
+    const plan = await gstLedgerPlan(
+      prisma,
+      { cashTransactionId: existing.cashTransactionId, itcTransactionId: existing.itcTransactionId },
+      null,
+    );
+    if (plan.changes) {
+      await assertDatesOpen(prisma, plan.dates);
     }
 
     await prisma.$transaction(async (tx) => {

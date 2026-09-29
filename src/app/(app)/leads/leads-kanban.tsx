@@ -247,10 +247,13 @@ export interface LeadsKanbanProps {
    * render in finite time.
    */
   items: LeadPublic[];
+  /** Who is looking — only leads they may edit can be dragged. */
+  currentUserId?: string;
+  isAdmin?: boolean;
 }
 
 /** See file-level JSDoc. */
-export function LeadsKanban({ items }: LeadsKanbanProps) {
+export function LeadsKanban({ items, currentUserId, isAdmin = true }: LeadsKanbanProps) {
   const router = useRouter();
 
   // Hold an optimistic copy of the leads list so a drop can update
@@ -334,6 +337,10 @@ export function LeadsKanban({ items }: LeadsKanbanProps) {
       getItemColumn={(lead) => lead.status}
       getItemId={(lead) => lead.id}
       onItemMove={handleMove}
+      // Same rule as the API: admin, the owner or the creator.
+      canDragItem={(lead) =>
+        isAdmin || lead.ownerId === currentUserId || lead.createdById === currentUserId
+      }
       renderCard={(lead) => <LeadCard lead={lead} />}
     />
   );

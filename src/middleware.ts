@@ -85,7 +85,8 @@ const ADMIN_ONLY_PATH_PREFIXES = [
   '/settings/users',
   '/api/settings',
   '/ai',
-  '/api/ai/usage',
+  // Every AI endpoint: insights carry lead, ad-spend and people data.
+  '/api/ai',
   // Product management (the switcher itself is server-rendered).
   '/api/products',
 ] as const;
@@ -207,7 +208,13 @@ export default auth((req) => {
   //    `src/lib/permissions.ts#canAccessModule`). Page hits redirect to
   //    `/dashboard`; API hits return a structured 403 JSON body that
   //    clients can branch on.
-  if (session?.role === 'EMPLOYEE' && session.moduleAccess) {
+  //    An employee's own profile (and its API) stays reachable whatever
+  //    modules they have — it is where they change their details.
+  const ownId = session?.userId;
+  const isOwnProfile =
+    Boolean(ownId) &&
+    (pathname === `/employees/${ownId}` || matchesPrefix(pathname, `/api/users/${ownId}`));
+  if (session?.role === 'EMPLOYEE' && session.moduleAccess && !isOwnProfile) {
     const user = {
       role: session.role,
       moduleAccess: session.moduleAccess,

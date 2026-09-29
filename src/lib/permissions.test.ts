@@ -635,7 +635,8 @@ describe('canAccessModule() — employee explicit whitelist', () => {
     const user = { role: 'EMPLOYEE' as const, moduleAccess: ['leads'] };
     expect(canAccessModule(user, 'leads')).toBe(true);
     expect(canAccessModule(user, 'marketing')).toBe(false);
-    expect(canAccessModule(user, 'dashboard')).toBe(false);
+    // The dashboard is never locked: denied pages redirect there.
+    expect(canAccessModule(user, 'dashboard')).toBe(true);
     expect(canAccessModule(user, 'employees')).toBe(false);
     expect(canAccessModule(user, 'social')).toBe(false);
     expect(canAccessModule(user, 'dev')).toBe(false);
@@ -656,7 +657,9 @@ describe('canAccessModule() — employee explicit whitelist', () => {
     fc.assert(
       fc.property(moduleIdArb, moduleIdArb, (granted, candidate) => {
         const user = { role: 'EMPLOYEE' as const, moduleAccess: [granted] };
-        expect(canAccessModule(user, candidate)).toBe(granted === candidate);
+        expect(canAccessModule(user, candidate)).toBe(
+          granted === candidate || candidate === 'dashboard',
+        );
       }),
       { numRuns: 100 },
     );
@@ -667,7 +670,9 @@ describe('canAccessModule() — employee explicit whitelist', () => {
       fc.property(moduleAccessArb, moduleIdArb, (whitelist, candidate) => {
         fc.pre(whitelist.length > 0);
         const user = { role: 'EMPLOYEE' as const, moduleAccess: whitelist };
-        expect(canAccessModule(user, candidate)).toBe(whitelist.includes(candidate));
+        expect(canAccessModule(user, candidate)).toBe(
+          whitelist.includes(candidate) || candidate === 'dashboard',
+        );
       }),
       { numRuns: 200 },
     );

@@ -453,7 +453,11 @@ export default async function LeadsPage({ searchParams }: LeadsPageProps) {
 
       {isKanban ? (
         <>
-          <LeadsKanban items={items as LeadPublic[]} />
+          <LeadsKanban
+            items={items as LeadPublic[]}
+            currentUserId={session.userId}
+            isAdmin={session.role === 'ADMIN'}
+          />
           {total > items.length ? (
             <p className="text-xs text-muted-foreground">
               Showing the first {items.length} of {total} leads. Narrow

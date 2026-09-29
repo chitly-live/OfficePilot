@@ -38,16 +38,42 @@ describe('isLikelyDuplicate', () => {
     ).toBeNull();
   });
 
-  it('treats a repeated UTR as a duplicate wherever it is', () => {
-    const withRef = { ...stored, accountId: 'yes', reference: 'AXISCN1481398175' };
+  it('treats the same UTR with the same money as a duplicate, on any account or date', () => {
+    const withRef = { ...stored, direction: 'IN' as const, amount: 12096.16, accountId: 'yes', reference: 'AXISCN1481398175' };
     const probe = {
-      date: at('2026-10-01'),
+      date: at('2026-10-15'),
       direction: 'IN' as const,
-      amount: 1,
+      amount: 12096.16,
       accountId: null,
       reference: ' axiscn1481398175 ',
     };
     expect(isLikelyDuplicate(probe, withRef)).toBe('same_reference');
+  });
+
+  it('does not flag equal charges on adjacent days that carry different UTRs', () => {
+    const aug31 = { date: at('2026-08-31'), direction: 'OUT' as const, amount: 7, accountId: 'yes', reference: 'ORMB957221750355' };
+    const sep01 = { date: at('2026-09-01'), direction: 'OUT' as const, amount: 7, accountId: 'yes', reference: 'ORMB957300000001' };
+    expect(isLikelyDuplicate(sep01, aug31)).toBeNull();
+    // Without references there is nothing to tell them apart: still a warning.
+    expect(isLikelyDuplicate({ ...sep01, reference: null }, { ...aug31, reference: null })).toBe('same_amount');
+  });
+
+  it('does not flag an IMPS charge and its GST, which share one reference', () => {
+    const charge = { date: at('2026-09-27'), direction: 'OUT' as const, amount: 6, accountId: 'yes', reference: 'ORMB960000000001' };
+    const gst = { date: at('2026-09-27'), direction: 'OUT' as const, amount: 1.08, accountId: 'yes', reference: 'ORMB960000000001' };
+    expect(isLikelyDuplicate(gst, charge)).toBeNull();
+  });
+
+  it('rounds each split share before checking the total', () => {
+    const payment = { category: 'CARD_REPAYMENT' as const, direction: 'OUT' as const, amount: 1000 };
+    // 333.333 ×3 rounds to 999.99 stored — a paisa short.
+    expect(() =>
+      checkCardSplitShape(payment, [
+        { accountId: 'a', amount: 333.333 },
+        { accountId: 'b', amount: 333.333 },
+        { accountId: 'c', amount: 333.334 },
+      ]),
+    ).toThrow(/to the paisa/);
   });
 });
 

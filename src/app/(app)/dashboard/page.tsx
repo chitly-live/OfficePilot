@@ -46,6 +46,7 @@ import { format } from 'date-fns';
 
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { canAccessModule } from '@/lib/permissions';
 import { PageHeader } from '@/components/shared/PageHeader';
 
 import { LatestInsights } from './latest-insights';
@@ -81,12 +82,44 @@ export default async function DashboardPage() {
   // ------------------------------------------------------------------
   // 2. Parallel data fetch — one Promise.all so TTFB == slowest loader.
   // ------------------------------------------------------------------
-  const [pulse, insights, timeline, followUps] = await Promise.all([
+  // Each widget belongs to a module; an employee sees only the ones their
+  // admin granted (empty moduleAccess = legacy = everything).
+  const access = { role: session.role, moduleAccess: session.moduleAccess ?? [] };
+  const show = {
+    leads: canAccessModule(access, 'leads'),
+    marketing: canAccessModule(access, 'marketing'),
+    social: canAccessModule(access, 'social'),
+    dev: canAccessModule(access, 'dev'),
+  };
+  const everything = show.leads && show.marketing && show.social && show.dev;
+
+  const [pulse, allInsights, fullTimeline, allFollowUps] = await Promise.all([
     loadTodaysPulse(prisma),
     loadLatestInsights(prisma),
     loadTimeline(prisma),
-    loadFollowUps(prisma),
+    show.leads ? loadFollowUps(prisma) : Promise.resolve({ todaysFollowUps: [], overdueFollowUps: [] }),
   ]);
+
+  // Insight scopes map onto modules; "overall" summarises all of them.
+  const scopeAllowed: Record<string, boolean> = {
+    ads: show.marketing,
+    leads: show.leads,
+    social: show.social,
+    overall: everything,
+  };
+  const insights = allInsights.filter((slot) => scopeAllowed[slot.scope] ?? false);
+  const timeline = {
+    ...fullTimeline,
+    campaigns: show.marketing ? fullTimeline.campaigns : [],
+    releases: show.dev ? fullTimeline.releases : [],
+  };
+  const followUps = allFollowUps;
+  const allowedActions = [
+    ...(show.leads ? ['/leads/new'] : []),
+    ...(show.dev ? ['/dev/new'] : []),
+    ...(show.social ? ['/social/new'] : []),
+    ...(show.marketing ? ['/marketing/new'] : []),
+  ];
 
   const isAdmin = session.role === 'ADMIN';
 
@@ -104,13 +137,19 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       <PageHeader title={headerTitle} subtitle={headerSubtitle} />
 
-      <TodaysPulse data={pulse} />
+      {show.leads || show.marketing || show.social || show.dev ? (
+        <TodaysPulse data={pulse} show={show} />
+      ) : null}
 
-      <LatestInsights data={insights} isAdmin={isAdmin} />
+      {insights.length > 0 ? <LatestInsights data={insights} isAdmin={isAdmin} /> : null}
 
-      <ReleaseCampaignTimeline data={timeline} />
+      {show.marketing || show.dev ? <ReleaseCampaignTimeline data={timeline} /> : null}
 
-      <QuickActionsReminders followUps={followUps} />
+      <QuickActionsReminders
+        followUps={followUps}
+        allowedActions={allowedActions}
+        showFollowUps={show.leads}
+      />
     </div>
   );
 }

@@ -172,10 +172,14 @@ function PlatformBreakdown({
 
 export interface TodaysPulseProps {
   data: TodaysPulse;
+  /** Which cards this user may see — each belongs to one module. */
+  show?: { leads: boolean; marketing: boolean; social: boolean; dev: boolean };
 }
 
+const SHOW_ALL = { leads: true, marketing: true, social: true, dev: true };
+
 /** Row 1 of the dashboard (SPEC §11.1) — 4 KPI cards. */
-export function TodaysPulse({ data }: TodaysPulseProps) {
+export function TodaysPulse({ data, show = SHOW_ALL }: TodaysPulseProps) {
   const leadsDelta = data.newLeadsToday - data.newLeadsYesterday;
   const spendDelta = data.adSpendToday - data.adSpendYesterday;
 
@@ -184,38 +188,46 @@ export function TodaysPulse({ data }: TodaysPulseProps) {
       aria-label="Today's pulse"
       className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
     >
-      <StatCard
-        label={<CardLabel icon={Users}>New leads today</CardLabel>}
-        value={data.newLeadsToday.toLocaleString('en-IN')}
-        delta={buildCountDelta(leadsDelta)}
-      />
+      {show.leads ? (
+        <StatCard
+          label={<CardLabel icon={Users}>New leads today</CardLabel>}
+          value={data.newLeadsToday.toLocaleString('en-IN')}
+          delta={buildCountDelta(leadsDelta)}
+        />
+      ) : null}
 
-      <StatCard
-        label={<CardLabel icon={TrendingUp}>Ad spend today</CardLabel>}
-        value={formatInr(data.adSpendToday)}
-        delta={buildCurrencyDelta(spendDelta)}
-      />
+      {show.marketing ? (
+        <StatCard
+          label={<CardLabel icon={TrendingUp}>Ad spend today</CardLabel>}
+          value={formatInr(data.adSpendToday)}
+          delta={buildCurrencyDelta(spendDelta)}
+        />
+      ) : null}
 
-      <StatCard
-        label={<CardLabel icon={Send}>Posts published today</CardLabel>}
-        value={data.postsPublishedToday.total.toLocaleString('en-IN')}
-        sparkline={
-          <PlatformBreakdown
-            byPlatform={data.postsPublishedToday.byPlatform}
-          />
-        }
-      />
+      {show.social ? (
+        <StatCard
+          label={<CardLabel icon={Send}>Posts published today</CardLabel>}
+          value={data.postsPublishedToday.total.toLocaleString('en-IN')}
+          sparkline={
+            <PlatformBreakdown
+              byPlatform={data.postsPublishedToday.byPlatform}
+            />
+          }
+        />
+      ) : null}
 
-      <StatCard
-        label={<CardLabel icon={ListTodo}>Open dev tasks</CardLabel>}
-        value={data.openDevTasks.total.toLocaleString('en-IN')}
-        sparkline={
-          <div className="text-xs text-muted-foreground">
-            <span className="tabular-nums">{data.openDevTasks.inProgress}</span>{' '}
-            in progress
-          </div>
-        }
-      />
+      {show.dev ? (
+        <StatCard
+          label={<CardLabel icon={ListTodo}>Open dev tasks</CardLabel>}
+          value={data.openDevTasks.total.toLocaleString('en-IN')}
+          sparkline={
+            <div className="text-xs text-muted-foreground">
+              <span className="tabular-nums">{data.openDevTasks.inProgress}</span>{' '}
+              in progress
+            </div>
+          }
+        />
+      ) : null}
     </section>
   );
 }

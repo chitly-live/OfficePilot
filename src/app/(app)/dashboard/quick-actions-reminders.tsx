@@ -45,6 +45,10 @@ import type { FollowUpBuckets, FollowUpLead } from './loaders';
 export interface QuickActionsRemindersProps {
   /** Output of `loadFollowUps()` (see `./loaders.ts`). */
   followUps: FollowUpBuckets;
+  /** Create links this user may use (their modules). Defaults to all. */
+  allowedActions?: readonly string[];
+  /** Follow-ups are Leads data; hidden without that module. */
+  showFollowUps?: boolean;
 }
 
 /**
@@ -68,7 +72,12 @@ const QUICK_ACTIONS: ReadonlyArray<{
 
 export function QuickActionsReminders({
   followUps,
+  allowedActions,
+  showFollowUps = true,
 }: QuickActionsRemindersProps) {
+  const actions = allowedActions
+    ? QUICK_ACTIONS.filter((a) => allowedActions.includes(a.href))
+    : QUICK_ACTIONS;
   const { todaysFollowUps, overdueFollowUps } = followUps;
 
   const overdueShown = overdueFollowUps.slice(0, ROW_LIMIT);
@@ -85,7 +94,7 @@ export function QuickActionsReminders({
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-3">
-            {QUICK_ACTIONS.map(({ href, label, Icon }) => (
+            {actions.map(({ href, label, Icon }) => (
               <Button key={href} asChild variant="outline" size="lg">
                 <Link href={href}>
                   <Icon aria-hidden="true" />
@@ -98,32 +107,34 @@ export function QuickActionsReminders({
       </Card>
 
       {/* --- Right: Follow-up reminders ------------------------------- */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Follow-up reminders</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <FollowUpSection
-            heading="Overdue"
-            headingId="dashboard-overdue-followups"
-            badgeVariant="destructive"
-            totalCount={overdueFollowUps.length}
-            shown={overdueShown}
-            restCount={overdueRest}
-            emptyLabel="No overdue follow-ups"
-          />
+      {showFollowUps ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Follow-up reminders</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <FollowUpSection
+              heading="Overdue"
+              headingId="dashboard-overdue-followups"
+              badgeVariant="destructive"
+              totalCount={overdueFollowUps.length}
+              shown={overdueShown}
+              restCount={overdueRest}
+              emptyLabel="No overdue follow-ups"
+            />
 
-          <FollowUpSection
-            heading="Today"
-            headingId="dashboard-today-followups"
-            badgeVariant="blue"
-            totalCount={todaysFollowUps.length}
-            shown={todayShown}
-            restCount={todayRest}
-            emptyLabel="No follow-ups today"
-          />
-        </CardContent>
-      </Card>
+            <FollowUpSection
+              heading="Today"
+              headingId="dashboard-today-followups"
+              badgeVariant="blue"
+              totalCount={todaysFollowUps.length}
+              shown={todayShown}
+              restCount={todayRest}
+              emptyLabel="No follow-ups today"
+            />
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

@@ -32,7 +32,7 @@ import { prisma } from '@/lib/db';
 import {
   errorResponse,
   parseSearchParams,
-  requireSession,
+  requireAdminSession,
 } from '@/lib/api-helpers';
 import { aiInsightListQuerySchema } from '@/lib/schemas/ai';
 
@@ -94,7 +94,8 @@ const aiInsightEmployeeProjection = {
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const session = await requireSession();
+    // AI Analysis is admin-only; insights carry lead, ad-spend and people data.
+    const session = await requireAdminSession();
 
     const query = parseSearchParams(
       req.nextUrl.searchParams,

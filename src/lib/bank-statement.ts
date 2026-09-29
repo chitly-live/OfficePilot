@@ -39,6 +39,13 @@ export interface ParsedStatement {
   skipped: { line: number; reason: string }[];
 }
 
+/** A month is ~100 lines; anything this big is not one statement. */
+export const MAX_STATEMENT_LINES = 5000;
+/** Longest cell kept; narrations are shorter, anything longer is cut. */
+const MAX_CELL = 500;
+/** Dates and amounts are short; a longer cell is not one. */
+const MAX_VALUE = 40;
+
 export class StatementParseError extends Error {
   constructor(message: string) {
     super(message);
@@ -63,12 +70,12 @@ export function parseCsv(text: string): string[][] {
     if (quoted) {
       if (ch === '"') {
         if (src[i + 1] === '"') {
-          field += '"';
+          if (field.length < MAX_CELL) field += '"';
           i++;
         } else {
           quoted = false;
         }
-      } else {
+      } else if (field.length < MAX_CELL) {
         field += ch;
       }
       continue;
@@ -84,7 +91,7 @@ export function parseCsv(text: string): string[][] {
       rows.push(row);
       row = [];
       field = '';
-    } else {
+    } else if (field.length < MAX_CELL) {
       field += ch;
     }
   }
@@ -103,7 +110,7 @@ export function parseCsv(text: string): string[][] {
 export function parseAmount(raw: string | undefined): number | null {
   if (raw === undefined) return null;
   let s = raw.trim();
-  if (s === '' || s === '-') return null;
+  if (s === '' || s === '-' || s.length > MAX_VALUE) return null;
   let negative = false;
   if (/^\(.*\)$/.test(s)) {
     negative = true;
@@ -137,7 +144,14 @@ function utc(y: number, m: number, d: number): Date | null {
 /** 2026-08-31 · 31/08/2026 · 31-08-26 · 31-Aug-2026 · 31 Aug 2026 → UTC midnight. */
 export function parseStatementDate(raw: string | undefined): Date | null {
   if (!raw) return null;
-  const s = raw.trim().split(/\s+\d{1,2}:\d{2}/)[0]!.trim();
+  let s = raw.trim();
+  if (s.length > MAX_VALUE) return null;
+  // Drop a trailing time ("31/08/2026 14:22:10") without a backtracking regex.
+  const colon = s.indexOf(':');
+  if (colon > 0) {
+    const cut = s.lastIndexOf(' ', colon);
+    if (cut > 0) s = s.slice(0, cut).trim();
+  }
   let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
   if (m) return utc(+m[1]!, +m[2]!, +m[3]!);
   m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(s);
@@ -191,7 +205,8 @@ function preambleValue(rows: string[][], label: RegExp): string[] | null {
 
 export function parseBankStatement(text: string): ParsedStatement {
   const rows = parseCsv(text);
-  const headerIndex = rows.findIndex((r) => findColumns(r) !== null);
+  // The headings sit in the first few rows, under the account preamble.
+  const headerIndex = rows.slice(0, 50).findIndex((r) => findColumns(r) !== null);
   if (headerIndex < 0) {
     throw new StatementParseError(
       'Could not find the column headings. The file needs a date column and withdrawal / deposit (or debit / credit) columns.',
@@ -206,6 +221,11 @@ export function parseBankStatement(text: string): ParsedStatement {
   for (const r of rows.slice(headerIndex + 1)) {
     if (r.every((c) => c.trim() === '')) continue;
     n++;
+    if (n > MAX_STATEMENT_LINES) {
+      throw new StatementParseError(
+        `The statement has more than ${MAX_STATEMENT_LINES} lines. Download one month at a time.`,
+      );
+    }
     const date = parseStatementDate(r[cols.date]);
     const debit = parseAmount(r[cols.debit]);
     const credit = parseAmount(r[cols.credit]);

@@ -29,7 +29,8 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { Menu, Search } from 'lucide-react';
+import Link from 'next/link';
+import { Menu, Search, UserCircle } from 'lucide-react';
 import type { Role } from '@prisma/client';
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -37,6 +38,7 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -48,10 +50,10 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { ROLE_LABELS } from '@/lib/permissions';
+import { ROLE_LABELS, canAccessModule } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 
-import { QuickAddModal } from './quick-add-modal';
+import { QuickAddModal, type EntityTab } from './quick-add-modal';
 import { Sidebar } from './sidebar';
 import { SignOutButton } from './sign-out-button';
 
@@ -106,6 +108,22 @@ export function Topbar({ user, productSwitcher }: TopbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const initials = getInitials(user.name, user.email);
+
+  // Quick add offers only the modules this user may create in.
+  const access = { role: user.role, moduleAccess: user.moduleAccess ?? [] };
+  const quickAddTabs: EntityTab[] =
+    user.role === 'ACCOUNTANT'
+      ? []
+      : (
+          [
+            ['lead', 'leads'],
+            ['campaign', 'marketing'],
+            ['social', 'social'],
+            ['dev', 'dev'],
+          ] as const
+        )
+          .filter(([, module]) => canAccessModule(access, module))
+          .map(([tab]) => tab);
   const displayName = user.name?.trim() || user.email;
 
   return (
@@ -133,6 +151,7 @@ export function Topbar({ user, productSwitcher }: TopbarProps) {
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <Sidebar
             role={user.role}
+            userId={user.id}
             moduleAccess={user.moduleAccess}
             onNavigate={() => setMobileOpen(false)}
           />
@@ -163,7 +182,9 @@ export function Topbar({ user, productSwitcher }: TopbarProps) {
 
       {/* Quick-add — opens the cross-page modal that creates a Lead,
           Campaign, Social post, or Dev task from any page (SPEC §9.2.5). */}
-      {user.role === 'ACCOUNTANT' ? null : <QuickAddModal currentUserId={user.id} />}
+      {quickAddTabs.length === 0 ? null : (
+        <QuickAddModal currentUserId={user.id} tabs={quickAddTabs} />
+      )}
 
       {/* User menu. */}
       <DropdownMenu>
@@ -195,6 +216,14 @@ export function Topbar({ user, productSwitcher }: TopbarProps) {
             </span>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          {user.role === 'ACCOUNTANT' ? null : (
+            <DropdownMenuItem asChild>
+              <Link href={`/employees/${user.id}`}>
+                <UserCircle className="h-4 w-4" aria-hidden="true" />
+                <span>My profile</span>
+              </Link>
+            </DropdownMenuItem>
+          )}
           {/* Render the sign-out form directly (not wrapped in
               DropdownMenuItem) — DropdownMenuItem's `onSelect` would
               steal the click before the form submits. The styling on

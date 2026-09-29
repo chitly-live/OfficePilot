@@ -283,7 +283,9 @@ describe('summarizeRows', () => {
         const t = summarizeRows(rows);
         expect(t.income).toBeLessThanOrEqual(t.cashIn + 0.01);
         expect(t.expense).toBeLessThanOrEqual(t.cashOut + 0.01);
-        expect(t.net).toBeCloseTo(t.income - t.expense, 2);
+        // Each figure is rounded to the paisa on its own, so the difference
+        // may be a paisa off the rounded net.
+        expect(Math.abs(t.net - (t.income - t.expense))).toBeLessThanOrEqual(0.011);
       }),
     );
   });

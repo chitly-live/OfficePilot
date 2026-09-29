@@ -40,6 +40,23 @@ export class BadRequestError extends Error {
  * becomes the `error` code the client branches on; `details` travels with it
  * (e.g. the rows it may duplicate) so the UI can show them.
  */
+/**
+ * An employee asked for a module their admin has not granted (or the
+ * accountant asked for anything outside Finance). Same body the middleware
+ * sends, so clients see one shape whichever layer refused.
+ */
+export class ModuleAccessError extends Error {
+  readonly code = 'module_access_denied' as const;
+  readonly module: string;
+
+  constructor(module: string) {
+    super(`No access to the ${module} module`);
+    this.name = 'ModuleAccessError';
+    this.module = module;
+    Object.setPrototypeOf(this, ModuleAccessError.prototype);
+  }
+}
+
 export class ConflictError extends Error {
   readonly code = 'conflict' as const;
   readonly reason: string;

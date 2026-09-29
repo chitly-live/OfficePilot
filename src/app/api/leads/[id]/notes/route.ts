@@ -29,11 +29,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { prisma } from '@/lib/db';
-import {
-  errorResponse,
-  parseJsonBody,
-  requireSession,
-} from '@/lib/api-helpers';
+import { errorResponse, parseJsonBody, requireModuleSession } from '@/lib/api-helpers';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
 import { leadNoteCreateSchema } from '@/lib/schemas/leads';
 
@@ -100,7 +96,7 @@ export async function GET(
   context: RouteContext,
 ): Promise<NextResponse> {
   try {
-    await requireSession();
+    await requireModuleSession('leads');
     const { id } = context.params;
 
     // Verify the lead exists before returning notes — a 404 on the
@@ -153,7 +149,7 @@ export async function POST(
   context: RouteContext,
 ): Promise<NextResponse> {
   try {
-    const session = await requireSession();
+    const session = await requireModuleSession('leads');
     const { id } = context.params;
 
     const input = await parseJsonBody(req, leadNoteCreateSchema);

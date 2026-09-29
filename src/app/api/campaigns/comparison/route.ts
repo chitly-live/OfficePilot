@@ -67,11 +67,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { CampaignChannel, LeadStatus, Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
-import {
-  errorResponse,
-  parseSearchParams,
-  requireSession,
-} from '@/lib/api-helpers';
+import { errorResponse, parseSearchParams, requireModuleSession } from '@/lib/api-helpers';
 import { campaignComparisonQuerySchema } from '@/lib/schemas/campaigns';
 
 // Force the Node runtime — Prisma is not Edge-compatible.
@@ -108,7 +104,7 @@ interface ComparisonResponse {
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    await requireSession();
+    await requireModuleSession('marketing');
 
     const query = parseSearchParams(
       req.nextUrl.searchParams,

@@ -142,7 +142,9 @@ async function postJson(
 // Tabs configuration
 // ---------------------------------------------------------------------------
 
-type EntityTab = 'lead' | 'campaign' | 'social' | 'dev';
+export type EntityTab = 'lead' | 'campaign' | 'social' | 'dev';
+
+const ALL_TABS: readonly EntityTab[] = ['lead', 'campaign', 'social', 'dev'];
 
 const TAB_LABELS: Record<EntityTab, string> = {
   lead: 'Lead',
@@ -161,21 +163,25 @@ export interface QuickAddModalProps {
   /** Render-prop slot for the trigger; defaults to a small "Quick add"
    *  button styled to fit inside the Topbar. */
   trigger?: React.ReactNode;
+  /** The record types this user may create (their modules). Defaults to all. */
+  tabs?: readonly EntityTab[];
 }
 
 export function QuickAddModal({
   currentUserId,
   trigger,
+  tabs = ALL_TABS,
 }: QuickAddModalProps) {
+  const firstTab = tabs[0] ?? 'lead';
   const [open, setOpen] = React.useState(false);
-  const [tab, setTab] = React.useState<EntityTab>('lead');
+  const [tab, setTab] = React.useState<EntityTab>(firstTab);
 
   // Reset to the leads tab whenever the dialog re-opens — avoids the
   // confusing "I opened quick add for the first time today and it's
   // showing me a campaign form" situation.
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
-    if (next) setTab('lead');
+    if (next) setTab(firstTab);
   };
 
   return (
@@ -212,29 +218,40 @@ export function QuickAddModal({
           onValueChange={(v) => setTab(v as EntityTab)}
           className="w-full"
         >
-          <TabsList className="grid w-full grid-cols-4">
-            {(['lead', 'campaign', 'social', 'dev'] as const).map((id) => (
+          <TabsList
+            className="grid w-full"
+            style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+          >
+            {tabs.map((id) => (
               <TabsTrigger key={id} value={id}>
                 {TAB_LABELS[id]}
               </TabsTrigger>
             ))}
           </TabsList>
 
-          <TabsContent value="lead" className="mt-4">
-            <QuickAddLead onSuccess={() => setOpen(false)} />
-          </TabsContent>
-          <TabsContent value="campaign" className="mt-4">
-            <QuickAddCampaign onSuccess={() => setOpen(false)} />
-          </TabsContent>
-          <TabsContent value="social" className="mt-4">
-            <QuickAddSocial onSuccess={() => setOpen(false)} />
-          </TabsContent>
-          <TabsContent value="dev" className="mt-4">
-            <QuickAddDev
-              currentUserId={currentUserId}
-              onSuccess={() => setOpen(false)}
-            />
-          </TabsContent>
+          {tabs.includes('lead') ? (
+            <TabsContent value="lead" className="mt-4">
+              <QuickAddLead onSuccess={() => setOpen(false)} />
+            </TabsContent>
+          ) : null}
+          {tabs.includes('campaign') ? (
+            <TabsContent value="campaign" className="mt-4">
+              <QuickAddCampaign onSuccess={() => setOpen(false)} />
+            </TabsContent>
+          ) : null}
+          {tabs.includes('social') ? (
+            <TabsContent value="social" className="mt-4">
+              <QuickAddSocial onSuccess={() => setOpen(false)} />
+            </TabsContent>
+          ) : null}
+          {tabs.includes('dev') ? (
+            <TabsContent value="dev" className="mt-4">
+              <QuickAddDev
+                currentUserId={currentUserId}
+                onSuccess={() => setOpen(false)}
+              />
+            </TabsContent>
+          ) : null}
         </Tabs>
       </DialogContent>
     </Dialog>

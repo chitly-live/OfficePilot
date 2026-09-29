@@ -87,7 +87,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 
 import { prisma } from '@/lib/db';
-import { errorResponse, parseJsonBody, requireSession } from '@/lib/api-helpers';
+import { errorResponse, parseJsonBody, requireModuleSession } from '@/lib/api-helpers';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
 import {
   MAX_CSV_ROWS,
@@ -417,7 +417,7 @@ interface ValidRow {
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const session = await requireSession();
+    const session = await requireModuleSession('leads');
 
     const { rows } = await parseJsonBody(req, importBodySchema);
 

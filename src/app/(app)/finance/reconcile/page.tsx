@@ -27,11 +27,16 @@ export default async function ReconcilePage() {
   if (!canViewFinance(session.role)) redirect('/dashboard');
   const canEdit = canManageFinance(session.role);
 
-  const [accounts, parties, product, closes, lockedThrough] = await Promise.all([
+  const [accounts, cards, parties, product, closes, lockedThrough] = await Promise.all([
     prisma.financeAccount.findMany({
       where: { isActive: true, type: { not: 'CREDIT_CARD' } },
       select: { id: true, name: true, type: true },
       orderBy: [{ type: 'asc' }, { name: 'asc' }],
+    }),
+    prisma.financeAccount.findMany({
+      where: { isActive: true, type: 'CREDIT_CARD' },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
     }),
     prisma.financeParty.findMany({
       where: { isActive: true },
@@ -58,6 +63,7 @@ export default async function ReconcilePage() {
 
       <ReconcileTool
         accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
+        cards={cards}
         parties={parties}
         productId={product?.id ?? null}
         canEdit={canEdit}

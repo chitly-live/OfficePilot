@@ -44,12 +44,19 @@ import { ZodError, type ZodSchema } from 'zod';
 import { Prisma, type Role } from '@prisma/client';
 
 import { auth } from '@/lib/auth';
-import { BadRequestError, ConflictError, UnauthorizedError } from '@/lib/http-errors';
+import {
+  BadRequestError,
+  ConflictError,
+  ModuleAccessError,
+  UnauthorizedError,
+} from '@/lib/http-errors';
 import {
   assertCan,
   PermissionError,
+  canAccessModule,
   canViewFinance,
   type Action,
+  type ModuleId,
   type OwnedRecord,
   type PermissionSession,
   type Resource,
@@ -79,7 +86,7 @@ export interface AuthenticatedSession {
 // `/api/*` traffic, handlers re-check defensively), BadRequestError and
 // ConflictError live in `http-errors.ts` so pure libraries can throw them
 // without importing auth. Re-exported here for every existing caller.
-export { BadRequestError, ConflictError, UnauthorizedError };
+export { BadRequestError, ConflictError, ModuleAccessError, UnauthorizedError };
 
 // ---------------------------------------------------------------------------
 // Session guards
@@ -126,6 +133,27 @@ export async function requireAdminSession(): Promise<AuthenticatedSession> {
  * `/api/finance` (lists, detail, summary, export). Writes keep
  * {@link requireAdminSession}.
  */
+/**
+ * Session guard for the work modules (leads, marketing, social, dev,
+ * employees). Mirrors the middleware's module gate inside the handler, so
+ * the rule holds even if a request ever reaches a route without passing
+ * through middleware: the accountant is refused outright and an employee
+ * needs the module in their `moduleAccess` (empty = legacy = all).
+ */
+export async function requireModuleSession(
+  moduleId: ModuleId,
+): Promise<AuthenticatedSession & { moduleAccess: string[] }> {
+  const session = await auth();
+  if (!session || !session.userId || !session.role) {
+    throw new UnauthorizedError();
+  }
+  const moduleAccess = session.moduleAccess ?? [];
+  if (!canAccessModule({ role: session.role, moduleAccess }, moduleId)) {
+    throw new ModuleAccessError(moduleId);
+  }
+  return { userId: session.userId, role: session.role, moduleAccess };
+}
+
 export async function requireFinanceReadSession(): Promise<AuthenticatedSession> {
   const session = await requireSession();
   if (!canViewFinance(session.role)) {
@@ -262,6 +290,13 @@ export function errorResponse(error: unknown): NextResponse {
     return NextResponse.json(
       { error: 'bad_request', message: 'Validation failed', issues: error.issues },
       { status: 400 },
+    );
+  }
+
+  if (error instanceof ModuleAccessError) {
+    return NextResponse.json(
+      { error: 'module_access_denied', module: error.module },
+      { status: 403 },
     );
   }
 

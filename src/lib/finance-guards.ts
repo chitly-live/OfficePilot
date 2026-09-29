@@ -57,13 +57,20 @@ export function isLikelyDuplicate(
     reference: string | null;
   },
 ): DuplicateCandidate['reason'] | null {
-  const ref = probe.reference?.trim().toLowerCase();
-  if (ref && row.reference && row.reference.trim().toLowerCase() === ref) {
-    return 'same_reference';
-  }
-  if (!probe.accountId || row.accountId !== probe.accountId) return null;
   if (row.direction !== probe.direction) return null;
   if (Math.abs(round2(row.amount) - round2(probe.amount)) >= 0.005) return null;
+  // Same UTR, same money: the same bank line entered twice, whatever the
+  // account. (A charge and its GST share one reference but differ in
+  // amount, so they are not duplicates of each other.)
+  const ref = probe.reference?.trim().toLowerCase();
+  const rowRef = row.reference?.trim().toLowerCase();
+  if (ref && rowRef && rowRef === ref) {
+    return 'same_reference';
+  }
+  // Both carry a reference and they differ: two different bank lines, even
+  // for the same amount on adjacent days (₹7 IMPS charges, say).
+  if (ref && rowRef) return null;
+  if (!probe.accountId || row.accountId !== probe.accountId) return null;
   if (Math.abs(row.date.getTime() - probe.date.getTime()) > DAY_MS) return null;
   return 'same_amount';
 }
@@ -75,12 +82,15 @@ export async function findPossibleDuplicates(
 ): Promise<DuplicateCandidate[]> {
   const ref = probe.reference?.trim();
   const or: Prisma.FinanceTransactionWhereInput[] = [];
-  if (ref) or.push({ reference: { equals: ref, mode: 'insensitive' } });
+  const money = { gte: probe.amount - 0.005, lte: probe.amount + 0.005 };
+  if (ref) {
+    or.push({ reference: { equals: ref, mode: 'insensitive' }, direction: probe.direction, amount: money });
+  }
   if (probe.accountId) {
     or.push({
       accountId: probe.accountId,
       direction: probe.direction,
-      amount: { gte: probe.amount - 0.005, lte: probe.amount + 0.005 },
+      amount: money,
       date: {
         gte: new Date(probe.date.getTime() - DAY_MS),
         lte: new Date(probe.date.getTime() + DAY_MS),
@@ -172,10 +182,11 @@ export function checkCardSplitShape(
   if (ids.size !== parts.length) {
     throw new BadRequestError('Each card can appear only once in a split');
   }
-  if (parts.some((p) => !(p.amount > 0))) {
+  if (parts.some((p) => !(round2(p.amount) > 0))) {
     throw new BadRequestError('Every card in the split needs an amount above zero');
   }
-  const total = round2(parts.reduce((s, p) => s + p.amount, 0));
+  // Compare what will be stored: each share rounded to the paisa.
+  const total = round2(parts.reduce((s, p) => s + round2(p.amount), 0));
   if (Math.abs(total - round2(row.amount)) >= 0.005) {
     throw new BadRequestError(
       `The split adds up to ${formatInr(total)} but the payment is ${formatInr(row.amount)} — they must match to the paisa`,

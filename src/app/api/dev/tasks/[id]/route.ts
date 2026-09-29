@@ -47,7 +47,7 @@ import {
   errorResponse,
   parseJsonBody,
   requireAdminSession,
-  requireSession,
+  requireModuleSession,
 } from '@/lib/api-helpers';
 import { PermissionError } from '@/lib/permissions';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
@@ -88,7 +88,7 @@ export async function GET(
   context: RouteContext,
 ): Promise<NextResponse> {
   try {
-    await requireSession();
+    await requireModuleSession('dev');
     const { id } = context.params;
 
     const task = await prisma.devTask.findUnique({
@@ -141,7 +141,7 @@ export async function PATCH(
   context: RouteContext,
 ): Promise<NextResponse> {
   try {
-    const session = await requireSession();
+    const session = await requireModuleSession('dev');
     const { id } = context.params;
 
     const input = await parseJsonBody(req, devTaskUpdateSchema);

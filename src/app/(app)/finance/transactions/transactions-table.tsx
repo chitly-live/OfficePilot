@@ -204,7 +204,11 @@ export function TransactionsTable({
             );
           },
         },
-        {
+      );
+
+      // The accountant reads the ledger; editing is the admin's.
+      if (!readOnly) {
+        cols.push({
           id: 'actions',
           header: () => <span className="sr-only">Actions</span>,
           cell: ({ row }) => (
@@ -214,8 +218,8 @@ export function TransactionsTable({
               </Button>
             </div>
           ),
-        },
-      );
+        });
+      }
 
       return cols;
     },

@@ -11,8 +11,8 @@
  *
  * What is left over is the answer: statement lines missing from the panel,
  * and panel rows the bank never saw. For a missing line we suggest how to
- * record it (category, party, description), learning from the rows already
- * in the ledger before falling back to keyword rules.
+ * record it — from the bank's own charge narrations, or from the payee named
+ * in the narration matched against our parties and their past entries.
  *
  * Pure — the loader in `finance-reconcile.ts` supplies the rows.
  */
@@ -34,6 +34,13 @@ export interface LedgerLine {
   reference: string | null;
   partyId: string | null;
   partyName: string | null;
+  /** Intermediary the bank actually paid (bank → Ritu → Shubham). */
+  viaPartyId?: string | null;
+}
+
+export interface PartyRef {
+  id: string;
+  name: string;
 }
 
 export type MatchKind = 'reference' | 'date' | 'near_date';
@@ -50,9 +57,13 @@ export interface Suggestion {
   category: FinanceCategory | null;
   partyId: string | null;
   partyName: string | null;
+  viaPartyId: string | null;
   description: string;
-  /** Where the guess came from, shown next to it. */
-  basis: 'history' | 'rule' | 'none';
+  /**
+   * Where the guess came from: a bank charge rule, the payee's past entries,
+   * the payee alone (category still to pick), or nothing.
+   */
+  basis: 'rule' | 'history' | 'party' | 'none';
 }
 
 export interface MissingLine {
@@ -75,36 +86,49 @@ export interface ReconcileResult {
 }
 
 const cleanRef = (s: string | null | undefined) => (s ?? '').trim().toLowerCase();
-const sameMoney = (a: number, b: number) => Math.abs(round2(a) - round2(b)) < 0.005;
+const cents = (n: number) => Math.round(round2(n) * 100);
 const days = (a: Date, b: Date) => Math.round((a.getTime() - b.getTime()) / DAY_MS);
 
 export function reconcile(
   lines: readonly StatementLine[],
   rows: readonly LedgerLine[],
   history: readonly LedgerLine[] = rows,
+  parties: readonly PartyRef[] = [],
 ): ReconcileResult {
+  // Rows bucketed by direction + amount: a line only ever looks at rows it
+  // could possibly match, so a big statement stays fast.
+  const buckets = new Map<string, Set<number>>();
+  rows.forEach((r, i) => {
+    const key = `${r.direction}|${cents(r.amount)}`;
+    const set = buckets.get(key) ?? new Set<number>();
+    set.add(i);
+    buckets.set(key, set);
+  });
+
   const freeLines = new Set(lines.map((_, i) => i));
-  const freeRows = new Set(rows.map((_, i) => i));
   const matched: MatchedPair[] = [];
 
   function pass(kind: MatchKind, fits: (l: StatementLine, r: LedgerLine) => boolean) {
     for (const li of Array.from(freeLines)) {
       const line = lines[li]!;
+      const bucket = buckets.get(`${line.direction}|${cents(line.amount)}`);
+      if (!bucket || bucket.size === 0) continue;
       // Nearest date first, so two equal amounts pair with the right day.
-      const candidates = Array.from(freeRows)
-        .filter((ri) => {
-          const row = rows[ri]!;
-          return row.direction === line.direction && sameMoney(row.amount, line.amount) && fits(line, row);
-        })
-        .sort(
-          (a, b) =>
-            Math.abs(days(rows[a]!.date, line.date)) - Math.abs(days(rows[b]!.date, line.date)),
-        );
-      const ri = candidates[0];
-      if (ri === undefined) continue;
+      let best: number | undefined;
+      let bestGap = Infinity;
+      for (const ri of bucket) {
+        const row = rows[ri]!;
+        if (!fits(line, row)) continue;
+        const gap = Math.abs(days(row.date, line.date));
+        if (gap < bestGap) {
+          best = ri;
+          bestGap = gap;
+        }
+      }
+      if (best === undefined) continue;
       freeLines.delete(li);
-      freeRows.delete(ri);
-      matched.push({ line, row: rows[ri]!, kind, dayShift: days(rows[ri]!.date, line.date) });
+      bucket.delete(best);
+      matched.push({ line, row: rows[best]!, kind, dayShift: days(rows[best]!.date, line.date) });
     }
   }
 
@@ -112,13 +136,15 @@ export function reconcile(
   pass('date', (l, r) => days(r.date, l.date) === 0);
   pass('near_date', (l, r) => Math.abs(days(r.date, l.date)) <= 3);
 
+  const used = new Set(matched.map((m) => m.row.id));
   const missingLines = Array.from(freeLines).map((i) => lines[i]!);
+  const ctx = suggestionContext(missingLines, history);
   const missing = missingLines.map((line) => ({
     line,
-    suggestion: suggestFor(line, missingLines, history),
+    suggestion: suggestFor(line, missingLines, history, parties, ctx),
   }));
-  const extra = Array.from(freeRows)
-    .map((i) => rows[i]!)
+  const extra = rows
+    .filter((r) => !used.has(r.id))
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 
   const sum = (xs: { amount: number }[]) => round2(xs.reduce((s, x) => s + x.amount, 0));
@@ -136,83 +162,219 @@ export function reconcile(
 }
 
 // ---------------------------------------------------------------------------
-// Suggestions
+// Bank charge narrations (YES BANK wording, anchored so vendor payments that
+// merely mention a "charge" never match)
 // ---------------------------------------------------------------------------
 
-/** Tokens that identify a counterparty in a narration: words of 4+ letters. */
-function tokens(text: string): Set<string> {
-  const stop = new Set(['imps', 'neft', 'rtgs', 'payment', 'transfer', 'from', 'with', 'bank', 'india', 'private', 'limited', 'pvt', 'ltd', 'chrgs', 'charges']);
+const IMPS_CHARGE = /^IMPS\s+PAYMENT\s+CHRGS?\b/i;
+const AMB_CHARGE = /^AMB\s+CHRGS?\b/i;
+/** Other bank fee lines: a short upper-case label ending in CHRGS, no payee segments. */
+const OTHER_BANK_CHARGE = /^[A-Z][A-Z .&]{0,40}\bCHRGS?\b/;
+
+function impsChargeDescription(raw: string): string {
+  const m = /for\s+(\d{1,2}-[A-Za-z]{3}-\d{4})/i.exec(raw);
+  return m ? `IMPS charges for ${m[1]}` : 'IMPS charges';
+}
+
+function ambChargeDescription(raw: string): string {
+  const m = /for\s+([A-Za-z]{3,9}\s+\d{4})/i.exec(raw);
+  return m ? `Average monthly balance (AMB) charges, ${m[1]}` : 'Average monthly balance (AMB) charges';
+}
+
+/** How the ledger describes a charge line; null when the line is not one. */
+export function chargeDescription(raw: string): string | null {
+  const text = raw.trim();
+  if (IMPS_CHARGE.test(text)) return impsChargeDescription(text);
+  if (AMB_CHARGE.test(text)) return ambChargeDescription(text);
+  if (!text.includes('/') && OTHER_BANK_CHARGE.test(text)) return text;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Payee in the narration
+// ---------------------------------------------------------------------------
+
+/**
+ * The counterparty the bank names, and the sender's remark.
+ *
+ *   IMPS/NA/XXXX8575/RRN:…/PC…/BANK OF MAHARAS/Tinkal Wankar/HOST PAYMENT
+ *   NEFT Cr-UTIB0001920-CASHFREE PAYMENTS INDIA P-PRAXXEL TECHNOLOGIES PRIV-AXISCN…
+ *   YIB-NEFT-YESME…-SHUBHAM KUMAR-HDFC…-META ADS-HDFC BANK
+ */
+export function counterpartyOf(narration: string): { name: string; remark: string } | null {
+  const text = narration.trim();
+  if (/^IMPS\//i.test(text)) {
+    const parts = text.split('/');
+    if (parts.length >= 7) return { name: parts[6]!.trim(), remark: (parts[7] ?? '').trim() };
+    return null;
+  }
+  if (/^NEFT\s*Cr-/i.test(text)) {
+    const parts = text.split('-');
+    return parts.length >= 3 ? { name: parts[2]!.trim(), remark: '' } : null;
+  }
+  if (/^YIB-NEFT-/i.test(text)) {
+    const parts = text.split('-');
+    return parts.length >= 4 ? { name: parts[3]!.trim(), remark: (parts[5] ?? '').trim() } : null;
+  }
+  if (/^UPI\//i.test(text)) {
+    const parts = text.split('/');
+    return parts.length >= 4 ? { name: parts[3]!.trim(), remark: (parts[4] ?? '').trim() } : null;
+  }
+  return null;
+}
+
+/** Words that say nothing about who the payee is. */
+const NAME_STOP = new Set([
+  'the', 'and', 'for', 'pvt', 'ltd', 'limited', 'private', 'india', 'payments', 'payment', 'bank', 'services',
+  'technologies', 'technology', 'enterprises', 'solutions', 'mr', 'mrs', 'ms', 'shri', 'smt',
+]);
+
+function nameTokens(s: string): Set<string> {
   return new Set(
-    text
+    s
       .toLowerCase()
       .split(/[^a-z]+/)
-      .filter((w) => w.length >= 4 && !stop.has(w)),
+      .filter((w) => w.length >= 3 && !NAME_STOP.has(w)),
   );
 }
 
-const IMPS_CHARGE = /imps.*(chrg|charge)|(chrg|charge).*imps/i;
-const AMB_CHARGE = /\b(amb|avg\.?\s*bal|average\s+(monthly\s+)?balance|min(imum)?\s*bal)/i;
-const BANK_FEE = /\b(chrg|chrgs|charges?|fee|sms\s*alert|annual\s*fee|debit\s*card)\b/i;
-
-function titleDate(raw: string): string {
-  const m = /for\s+(\d{1,2}-[A-Za-z]{3}-\d{4})/i.exec(raw);
-  return m ? m[1]! : '';
+/** The one party whose name best matches the payee; null on no match or a tie. */
+export function matchParty(payee: string, parties: readonly PartyRef[]): PartyRef | null {
+  const want = nameTokens(payee);
+  if (want.size === 0) return null;
+  let best: PartyRef | null = null;
+  let bestScore = 0;
+  let tie = false;
+  for (const p of parties) {
+    const have = nameTokens(p.name);
+    let score = 0;
+    for (const w of have) if (want.has(w)) score++;
+    // One shared word is enough only when a name has just one word
+    // ("CASHFREE"); otherwise two must agree, so "Amit Kumar" never
+    // lands on "SHUBHAM KUMAR".
+    if (score === 0 || score < Math.min(2, have.size, want.size)) continue;
+    if (score > bestScore) {
+      best = p;
+      bestScore = score;
+      tie = false;
+    } else if (score === bestScore) {
+      tie = true;
+    }
+  }
+  return tie ? null : best;
 }
+
+/** A past description is reused only if it carries no dates or amounts of its own. */
+function reusableDescription(desc: string | null): string | null {
+  if (!desc) return null;
+  if (!/\d/.test(desc)) return desc;
+  const head = desc.split(/\s[·—]\s|\s-\s/)[0]!.trim();
+  return head && !/\d/.test(head) ? head : null;
+}
+
+function sentenceCase(s: string): string {
+  const t = s.trim().toLowerCase();
+  return t ? t[0]!.toUpperCase() + t.slice(1) : '';
+}
+
+/**
+ * Look-ups built once per reconciliation so each missing line costs a map
+ * read, not a scan of every other line — a statement of thousands of lines
+ * must not stall the server.
+ */
+export interface SuggestionContext {
+  /** First non-GST debit per reference: the charge a bare GST line belongs to. */
+  chargeByRef: Map<string, StatementLine>;
+  /** Latest past entry per `${direction}|${partyId}`, as party or as via. */
+  latestByParty: Map<string, LedgerLine>;
+  /** Payee name → matched party (null = none), per reconciliation. */
+  partyByPayee: Map<string, PartyRef | null>;
+}
+
+export function suggestionContext(
+  missing: readonly StatementLine[],
+  history: readonly LedgerLine[],
+): SuggestionContext {
+  const chargeByRef = new Map<string, StatementLine>();
+  for (const l of missing) {
+    const ref = cleanRef(l.reference);
+    if (!ref || l.direction !== 'OUT' || /^gst$/i.test(l.description.trim())) continue;
+    if (!chargeByRef.has(ref)) chargeByRef.set(ref, l);
+  }
+  const latestByParty = new Map<string, LedgerLine>();
+  for (const r of history) {
+    for (const pid of [r.partyId, r.viaPartyId]) {
+      if (!pid) continue;
+      const key = `${r.direction}|${pid}`;
+      const prev = latestByParty.get(key);
+      if (!prev || r.date > prev.date) latestByParty.set(key, r);
+    }
+  }
+  return { chargeByRef, latestByParty, partyByPayee: new Map() };
+}
+
+const NONE: Omit<Suggestion, 'description'> = {
+  category: null,
+  partyId: null,
+  partyName: null,
+  viaPartyId: null,
+  basis: 'none',
+};
 
 export function suggestFor(
   line: StatementLine,
   allMissing: readonly StatementLine[],
   history: readonly LedgerLine[],
+  parties: readonly PartyRef[] = [],
+  context?: SuggestionContext,
 ): Suggestion {
-  const text = line.description;
+  const ctx = context ?? suggestionContext(allMissing, history);
+  const text = line.description.trim();
 
-  // A bare "GST" line is the tax on the charge printed just before it
-  // (same reference) — describe it the way the ledger already does.
-  if (/^gst$/i.test(text.trim())) {
-    const charge = allMissing.find(
-      (o) => o !== line && cleanRef(o.reference) !== '' && cleanRef(o.reference) === cleanRef(line.reference) && !/^gst$/i.test(o.description.trim()),
-    );
-    const base = charge ? describeCharge(charge.description) : 'bank charges';
-    return { category: 'BANK_CHARGES', partyId: null, partyName: null, description: `GST on ${base}`, basis: 'rule' };
-  }
-  if (line.direction === 'OUT' && (IMPS_CHARGE.test(text) || AMB_CHARGE.test(text) || BANK_FEE.test(text))) {
-    return { category: 'BANK_CHARGES', partyId: null, partyName: null, description: describeCharge(text), basis: 'rule' };
+  // A bare "GST" debit is the tax on the charge printed next to it (same
+  // reference). A GST credit is a reversal — no guess.
+  if (/^gst$/i.test(text)) {
+    if (line.direction !== 'OUT') return { ...NONE, description: text };
+    const ref = cleanRef(line.reference);
+    const charge = ref ? ctx.chargeByRef.get(ref) : undefined;
+    const base = charge ? (chargeDescription(charge.description) ?? 'bank charges') : 'bank charges';
+    return { ...NONE, category: 'BANK_CHARGES', description: `GST on ${base}`, basis: 'rule' };
   }
 
-  // Learn from the ledger: the past row, same direction, whose description /
-  // reference shares the most narration words with this line.
-  const want = tokens(`${text} ${line.reference}`);
-  let best: { row: LedgerLine; score: number } | null = null;
-  if (want.size > 0) {
-    for (const row of history) {
-      if (row.direction !== line.direction) continue;
-      const have = tokens(`${row.description ?? ''} ${row.partyName ?? ''}`);
-      let score = 0;
-      for (const w of want) if (have.has(w)) score++;
-      if (score > 0 && (!best || score > best.score || (score === best.score && row.date > best.row.date))) {
-        best = { row, score };
-      }
-    }
+  if (line.direction === 'OUT') {
+    const charge = chargeDescription(text);
+    if (charge) return { ...NONE, category: 'BANK_CHARGES', description: charge, basis: 'rule' };
   }
-  if (best) {
+
+  // The payee the bank names, matched to one of our parties.
+  const cp = counterpartyOf(text);
+  let party: PartyRef | null = null;
+  if (cp) {
+    const key = cp.name.toLowerCase();
+    if (!ctx.partyByPayee.has(key)) ctx.partyByPayee.set(key, matchParty(cp.name, parties));
+    party = ctx.partyByPayee.get(key) ?? null;
+  }
+  if (!cp || !party) return { ...NONE, description: text };
+
+  const remark = sentenceCase(cp.remark);
+  // Their latest entry in this direction — as the party, or as the person the
+  // bank paid on the way to someone else.
+  const past = ctx.latestByParty.get(`${line.direction}|${party.id}`);
+  if (past) {
     return {
-      category: best.row.category,
-      partyId: best.row.partyId,
-      partyName: best.row.partyName,
-      description: best.row.description ?? text,
+      category: past.category,
+      partyId: past.partyId,
+      partyName: past.partyId === party.id ? party.name : past.partyName,
+      viaPartyId: past.viaPartyId ?? null,
+      description: reusableDescription(past.description) ?? (remark || text),
       basis: 'history',
     };
   }
-
-  return { category: null, partyId: null, partyName: null, description: text, basis: 'none' };
-}
-
-/** "IMPS PAYMENT CHRGS for 29-Aug-2026" → "IMPS charges for 29-Aug-2026". */
-function describeCharge(raw: string): string {
-  if (IMPS_CHARGE.test(raw)) {
-    const d = titleDate(raw);
-    return d ? `IMPS charges for ${d}` : 'IMPS charges';
-  }
-  if (AMB_CHARGE.test(raw)) return 'Average monthly balance (AMB) charges';
-  return raw.trim() || 'Bank charges';
+  return {
+    ...NONE,
+    partyId: party.id,
+    partyName: party.name,
+    description: remark || text,
+    basis: 'party',
+  };
 }

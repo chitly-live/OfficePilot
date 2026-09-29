@@ -84,6 +84,7 @@ export async function PATCH(
         viaPartyId: true,
         accountId: true,
         settlesAccountId: true,
+        dueDate: true,
         description: true,
         cardAllocations: { select: { accountId: true, amount: true } },
         gstReturnAsCash: { select: { month: true } },
@@ -98,11 +99,31 @@ export async function PATCH(
 
     // Rows a GST return generated are owned by that return: the money fields
     // change on the GST page, or the two would disagree.
+    // The edit form re-sends every field, so compare values, not keys.
     const gstMonth = existing.gstReturnAsCash?.month ?? existing.gstReturnAsItc?.month;
     if (gstMonth) {
-      const labelOnly = new Set(['description', 'reference', 'productId']);
-      const moneyFields = Object.keys(input).filter((k) => !labelOnly.has(k));
-      if (moneyFields.length > 0) {
+      const time = (d: Date | null | undefined) => (d ? d.getTime() : null);
+      const differs = (a: unknown, b: unknown) => (a ?? null) !== (b ?? null);
+      const moneyChanged =
+        (input.date !== undefined && time(input.date) !== time(existing.date)) ||
+        (input.direction !== undefined && input.direction !== existing.direction) ||
+        (input.category !== undefined && input.category !== existing.category) ||
+        (input.amount !== undefined && Math.abs(input.amount - existing.amount) >= 0.005) ||
+        (input.partyId !== undefined && differs(input.partyId, existing.partyId)) ||
+        (input.viaPartyId !== undefined && differs(input.viaPartyId, existing.viaPartyId)) ||
+        (input.accountId !== undefined && differs(input.accountId, existing.accountId)) ||
+        (input.settlesAccountId !== undefined &&
+          differs(input.settlesAccountId, existing.settlesAccountId)) ||
+        (input.originalAmount !== undefined &&
+          differs(
+            input.originalAmount === null ? null : round2(input.originalAmount),
+            existing.originalAmount === null ? null : round2(existing.originalAmount),
+          )) ||
+        (input.originalCurrency !== undefined &&
+          differs(input.originalCurrency, existing.originalCurrency)) ||
+        (input.dueDate !== undefined && time(input.dueDate) !== time(existing.dueDate)) ||
+        (input.cardSplit !== undefined && input.cardSplit !== null && input.cardSplit.length > 0);
+      if (moneyChanged) {
         throw new BadRequestError(
           `This row belongs to the GST return for ${gstMonth}. Change the amounts on the GST page.`,
         );

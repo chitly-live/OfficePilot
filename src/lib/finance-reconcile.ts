@@ -35,15 +35,34 @@ export interface ReconciliationView extends ReconcileResult {
   lockedThrough: string | null;
 }
 
+/**
+ * Which way the file runs, read from the balance chain: in a newest-first
+ * file each line's balance, with that line undone, is the next line's
+ * balance. Dates alone cannot tell when every line falls on one day.
+ */
+export function isNewestFirst(lines: readonly StatementLine[]): boolean {
+  let newest = 0;
+  let oldest = 0;
+  for (let i = 0; i + 1 < lines.length; i++) {
+    const a = lines[i]!;
+    const b = lines[i + 1]!;
+    if (a.balance === null || b.balance === null) continue;
+    const sa = a.direction === 'IN' ? a.amount : -a.amount;
+    const sb = b.direction === 'IN' ? b.amount : -b.amount;
+    if (Math.abs(round2(a.balance - sa) - b.balance) < 0.01) newest++;
+    if (Math.abs(round2(b.balance - sb) - a.balance) < 0.01) oldest++;
+  }
+  if (newest !== oldest) return newest > oldest;
+  return lines.length > 1 && lines[0]!.date.getTime() > lines[lines.length - 1]!.date.getTime();
+}
+
 /** Day-end balance per date as the bank printed it. */
 export function statementDayEnds(lines: readonly StatementLine[]): Map<string, number> {
   const withBalance = lines.filter((l) => l.balance !== null);
   if (withBalance.length === 0) return new Map();
-  // Exports run newest-first or oldest-first; the day's last line is the
-  // first one seen for that date in a newest-first file, the last otherwise.
-  const newestFirst =
-    withBalance.length > 1 &&
-    withBalance[0]!.date.getTime() > withBalance[withBalance.length - 1]!.date.getTime();
+  // The day's last line is the first one seen for that date in a
+  // newest-first file, the last one seen otherwise.
+  const newestFirst = isNewestFirst(withBalance);
   const out = new Map<string, number>();
   for (const l of withBalance) {
     const key = toDateKey(l.date);
@@ -84,11 +103,12 @@ export async function loadReconciliation(
     description: true,
     reference: true,
     partyId: true,
+    viaPartyId: true,
     accountId: true,
     party: { select: { name: true } },
   } as const;
 
-  const [accountRows, history, lockedThrough] = await Promise.all([
+  const [accountRows, history, lockedThrough, parties] = await Promise.all([
     db.financeTransaction.findMany({
       where: { accountId, date: { lte: toEnd } },
       select,
@@ -100,6 +120,7 @@ export async function loadReconciliation(
       take: 1000,
     }),
     latestClosedMonth(db),
+    db.financeParty.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
   ]);
 
   const toLine = (r: (typeof accountRows)[number]): LedgerLine => ({
@@ -112,11 +133,12 @@ export async function loadReconciliation(
     reference: r.reference,
     partyId: r.partyId,
     partyName: r.party?.name ?? null,
+    viaPartyId: r.viaPartyId,
   });
 
   const before = accountRows.filter((r) => r.date.getTime() < from.getTime());
   const inWindow = accountRows.filter((r) => r.date.getTime() >= from.getTime()).map(toLine);
-  const result = reconcile(parsed.lines, inWindow, history.map(toLine));
+  const result = reconcile(parsed.lines, inWindow, history.map(toLine), parties);
 
   const ledgerOpening = computeAccountBalance(account.openingBalance, before);
   const ledgerClosing = computeAccountBalance(ledgerOpening, inWindow);

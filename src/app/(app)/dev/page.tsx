@@ -260,7 +260,11 @@ export default async function DevPage({ searchParams }: DevPageProps) {
         />
       ) : (
         <>
-          <DevKanban items={items as DevTaskPublic[]} />
+          <DevKanban
+            items={items as DevTaskPublic[]}
+            currentUserId={session.userId}
+            isAdmin={session.role === 'ADMIN'}
+          />
           {total > items.length ? (
             <p className="text-xs text-muted-foreground">
               Showing the first {items.length} of {total} tasks. Narrow

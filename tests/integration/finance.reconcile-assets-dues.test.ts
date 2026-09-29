@@ -18,6 +18,24 @@ import { loadDues, loadPosition } from '@/lib/dues';
 
 import { buildJsonRequest, buildRouteContext, createTestUser, getJson, setSession } from './helpers';
 
+/** The reconcile response, as far as these tests read it. */
+interface ViewJson {
+  missing: {
+    line: { date: string; direction: string; amount: number; reference: string };
+    suggestion: { category: string; description: string };
+  }[];
+  extra: { amount: number }[];
+  matched: { kind: string }[];
+  dayMismatches: { date: string; difference: number }[];
+  [key: string]: unknown;
+}
+
+interface AssetJson {
+  id: string;
+  assignments: { toDate: string | null; toUser: { name: string } | null; toParty: { name: string } | null }[];
+  [key: string]: unknown;
+}
+
 const TXN = 'http://test/api/finance/transactions';
 const ASSETS = 'http://test/api/finance/assets';
 
@@ -69,7 +87,7 @@ describe('POST /api/finance/reconcile', () => {
       buildJsonRequest('POST', 'http://test/api/finance/reconcile', { accountId: bank.id, csv: STATEMENT }),
     );
     expect(res.status).toBe(200);
-    const view = (await getJson<Record<string, any>>(res))!;
+    const view = (await getJson<ViewJson>(res))!;
     expect(view).toMatchObject({
       statementLines: 3,
       ledgerRows: 1,
@@ -80,7 +98,7 @@ describe('POST /api/finance/reconcile', () => {
     });
     expect(view.matched).toHaveLength(1);
     expect(view.matched[0].kind).toBe('reference');
-    expect(view.missing.map((m: any) => m.suggestion.description).sort()).toEqual([
+    expect(view.missing.map((m) => m.suggestion.description).sort()).toEqual([
       'GST on IMPS charges for 29-Aug-2026',
       'IMPS charges for 29-Aug-2026',
     ]);
@@ -98,7 +116,7 @@ describe('POST /api/finance/reconcile', () => {
         reference: m.line.reference,
       });
     }
-    const again = (await getJson<Record<string, any>>(
+    const again = (await getJson<ViewJson>(
       await reconcile(buildJsonRequest('POST', 'http://test/api/finance/reconcile', { accountId: bank.id, csv: STATEMENT })),
     ))!;
     expect(again).toMatchObject({ clean: true, missing: [], extra: [], dayMismatches: [] });
@@ -107,10 +125,10 @@ describe('POST /api/finance/reconcile', () => {
   it('reports a row the bank never saw', async () => {
     const { bank } = await setup();
     await post({ date: '2026-08-15', direction: 'OUT', category: 'ADS', amount: 999, accountId: bank.id });
-    const view = (await getJson<Record<string, any>>(
+    const view = (await getJson<ViewJson>(
       await reconcile(buildJsonRequest('POST', 'http://test/api/finance/reconcile', { accountId: bank.id, csv: STATEMENT })),
     ))!;
-    expect(view.extra.map((r: any) => r.amount)).toEqual([999]);
+    expect(view.extra.map((r) => r.amount)).toEqual([999]);
   });
 
   it('says clearly when the file is not a statement', async () => {
@@ -151,7 +169,7 @@ describe('assets', () => {
       }),
     );
     expect(created.status).toBe(201);
-    const asset = (await getJson<Record<string, any>>(created))!;
+    const asset = (await getJson<AssetJson>(created))!;
     expect(asset).toMatchObject({ status: 'IN_USE', holder: { kind: 'user', name: 'Anchal', location: 'Her phone' } });
 
     // One payment buys one asset.
@@ -177,8 +195,8 @@ describe('assets', () => {
     );
     expect(await getJson(back)).toMatchObject({ status: 'IN_STOCK', holder: { kind: 'company', location: 'Office drawer' } });
 
-    const detail = (await getJson<Record<string, any>>(await getAsset(buildJsonRequest('GET', `${ASSETS}/${asset.id}`), buildRouteContext(asset.id))))!;
-    expect(detail.assignments.map((a: any) => [a.toUser?.name ?? a.toParty?.name ?? 'company', a.toDate !== null])).toEqual([
+    const detail = (await getJson<AssetJson>(await getAsset(buildJsonRequest('GET', `${ASSETS}/${asset.id}`), buildRouteContext(asset.id))))!;
+    expect(detail.assignments.map((a) => [a.toUser?.name ?? a.toParty?.name ?? 'company', a.toDate !== null])).toEqual([
       ['company', false],
       ['Tinkal', true],
       ['Anchal', true],

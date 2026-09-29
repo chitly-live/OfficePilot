@@ -122,6 +122,8 @@ export interface KanbanBoardProps<TItem> {
   emptyState?: React.ReactNode;
   /** Disable drag-and-drop (read-only board, e.g. for non-owners). */
   disableDrag?: boolean;
+  /** Per-card drag rule — cards the user may not edit stay put. */
+  canDragItem?: (item: TItem) => boolean;
   /** Extra classes on the outer container. */
   className?: string;
 }
@@ -180,6 +182,7 @@ interface KanbanColumnViewProps<TItem> {
   renderCard: (item: TItem) => React.ReactNode;
   renderHeader?: (column: KanbanColumn, count: number) => React.ReactNode;
   disableDrag?: boolean;
+  canDragItem?: (item: TItem) => boolean;
 }
 
 function KanbanColumnView<TItem>({
@@ -189,6 +192,7 @@ function KanbanColumnView<TItem>({
   renderCard,
   renderHeader,
   disableDrag,
+  canDragItem,
 }: KanbanColumnViewProps<TItem>) {
   // Whole column is a droppable so cards can be dropped onto an
   // empty column (SortableContext alone wouldn't accept drops with
@@ -239,7 +243,7 @@ function KanbanColumnView<TItem>({
               <KanbanCard
                 key={getItemId(item)}
                 id={getItemId(item)}
-                disabled={disableDrag}
+                disabled={disableDrag || (canDragItem ? !canDragItem(item) : false)}
               >
                 {renderCard(item)}
               </KanbanCard>
@@ -296,6 +300,7 @@ export function KanbanBoard<TItem>({
   isLoading = false,
   emptyState,
   disableDrag = false,
+  canDragItem,
   className,
 }: KanbanBoardProps<TItem>) {
   // Group items by column. Use a Map to preserve insertion order
@@ -401,6 +406,7 @@ export function KanbanBoard<TItem>({
                 renderCard={renderCard}
                 renderHeader={renderColumnHeader}
                 disableDrag={disableDrag}
+                canDragItem={canDragItem}
               />
             ))
           )}

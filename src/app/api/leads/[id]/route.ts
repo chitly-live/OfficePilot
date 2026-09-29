@@ -43,7 +43,7 @@ import {
   errorResponse,
   parseJsonBody,
   requireAdminSession,
-  requireSession,
+  requireModuleSession,
 } from '@/lib/api-helpers';
 import { assertCan, PermissionError } from '@/lib/permissions';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
@@ -83,7 +83,7 @@ export async function GET(
   context: RouteContext,
 ): Promise<NextResponse> {
   try {
-    await requireSession();
+    await requireModuleSession('leads');
     const { id } = context.params;
 
     const lead = await prisma.lead.findUnique({
@@ -128,7 +128,7 @@ export async function PATCH(
   context: RouteContext,
 ): Promise<NextResponse> {
   try {
-    const session = await requireSession();
+    const session = await requireModuleSession('leads');
     const { id } = context.params;
 
     const input = await parseJsonBody(req, leadUpdateSchema);

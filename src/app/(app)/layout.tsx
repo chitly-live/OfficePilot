@@ -84,7 +84,11 @@ export default async function AppLayout({ children }: AppLayoutProps) {
           lg:border-r lg:bg-background
         "
       >
-        <Sidebar role={session.role} moduleAccess={session.moduleAccess ?? []} />
+        <Sidebar
+          role={session.role}
+          userId={session.userId}
+          moduleAccess={session.moduleAccess ?? []}
+        />
       </aside>
 
       {/* Right column: topbar + main content. `min-w-0` is essential —

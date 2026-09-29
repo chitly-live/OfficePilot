@@ -115,7 +115,10 @@ export async function syncGstLedgerRows(
     if (id) {
       const found = await tx.financeTransaction.findUnique({ where: { id }, select: { id: true } });
       if (found) {
-        await tx.financeTransaction.update({ where: { id }, data });
+        // The row keeps the product it was booked under.
+        const { productId: _keep, ...rest } = data;
+        void _keep;
+        await tx.financeTransaction.update({ where: { id }, data: rest });
         return id;
       }
     }
@@ -139,6 +142,66 @@ export async function syncGstLedgerRows(
     null,
   );
   return { cashTransactionId, itcTransactionId };
+}
+
+/**
+ * What saving (or deleting, with `figures = null`) a return would do to its
+ * two ledger rows, judged from the rows as they actually are — a row may
+ * have been edited or removed since the return last wrote it. `changes` is
+ * false when every row already matches, so nothing needs touching; `dates`
+ * are every ledger date involved, old and new, for the month-lock check.
+ */
+export async function gstLedgerPlan(
+  db: Tx | PrismaClient,
+  ids: { cashTransactionId: string | null; itcTransactionId: string | null },
+  figures: GstReturnFigures | null,
+): Promise<{ changes: boolean; dates: Date[] }> {
+  const ids2 = [ids.cashTransactionId, ids.itcTransactionId].filter((v): v is string => Boolean(v));
+  const rows = ids2.length
+    ? await db.financeTransaction.findMany({
+        where: { id: { in: ids2 } },
+        select: { id: true, date: true, amount: true, accountId: true },
+      })
+    : [];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const date = figures ? gstLedgerDate(figures.month, figures.paidOn) : null;
+
+  const slots = [
+    {
+      current: ids.cashTransactionId ? byId.get(ids.cashTransactionId) ?? null : null,
+      target:
+        figures && figures.cashPaid > 0
+          ? { amount: figures.cashPaid, accountId: figures.cashAccountId }
+          : null,
+    },
+    {
+      current: ids.itcTransactionId ? byId.get(ids.itcTransactionId) ?? null : null,
+      target:
+        figures && figures.itcUsed > 0
+          ? { amount: figures.itcUsed, accountId: null as string | null }
+          : null,
+    },
+  ];
+
+  let changes = false;
+  const dates: Date[] = [];
+  for (const { current, target } of slots) {
+    if (!current && !target) continue;
+    const same =
+      current !== null &&
+      target !== null &&
+      date !== null &&
+      current.date.getTime() === date.getTime() &&
+      Math.abs(current.amount - target.amount) < 0.005 &&
+      (current.accountId ?? null) === (target.accountId ?? null);
+    // Description and reference are labels an admin may edit on the row;
+    // they are rewritten only when the money itself changes.
+    if (same) continue;
+    changes = true;
+    if (current) dates.push(current.date);
+    if (target && date) dates.push(date);
+  }
+  return { changes, dates };
 }
 
 /** Remove the ledger rows a return created. */

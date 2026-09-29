@@ -38,6 +38,8 @@ import { prisma } from '@/lib/db';
 export interface FakeSession {
   userId: string;
   role: Role;
+  /** Employee module whitelist, as the session callback exposes it. */
+  moduleAccess?: string[];
   user?: { id: string; role: Role; name?: string; email?: string };
 }
 
@@ -61,6 +63,7 @@ export async function setSession(session: FakeSession | null): Promise<void> {
   authMock.mockResolvedValue({
     userId: session.userId,
     role: session.role,
+    moduleAccess: session.moduleAccess ?? [],
     user: session.user ?? {
       id: session.userId,
       role: session.role,

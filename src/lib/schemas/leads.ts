@@ -921,6 +921,23 @@ export type LeadWebhookInput = z.infer<typeof leadWebhookSchema>;
  * Marked `as const` so changes to the Prisma model surface as TypeScript
  * errors at the call site first.
  */
+/**
+ * A lead with its contact and deal details blanked — for someone who may
+ * see that a lead exists (e.g. on a campaign they manage) but has no
+ * access to the Leads module itself.
+ */
+export function withoutLeadContact<T extends Record<string, unknown>>(lead: T): T {
+  return {
+    ...lead,
+    phone: null,
+    email: null,
+    address: null,
+    value: null,
+    notes: null,
+    extraDetails: null,
+  };
+}
+
 export const leadPublicProjection = {
   id: true,
   name: true,

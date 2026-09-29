@@ -26,11 +26,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { DevTaskType, type Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
-import {
-  errorResponse,
-  parseSearchParams,
-  requireSession,
-} from '@/lib/api-helpers';
+import { errorResponse, parseSearchParams, requireModuleSession } from '@/lib/api-helpers';
 import {
   devReleasesQuerySchema,
   devTaskPublicProjection,
@@ -45,7 +41,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    await requireSession();
+    await requireModuleSession('dev');
 
     const query = parseSearchParams(
       req.nextUrl.searchParams,

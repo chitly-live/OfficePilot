@@ -239,12 +239,14 @@ export default async function EmployeeDetailPage({ params }: PageProps) {
         subtitle={employee.designation || 'Employee profile'}
         actions={
           <div className="flex items-center gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link href="/employees">
-                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                <span>Back</span>
-              </Link>
-            </Button>
+            {isAdmin ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/employees">
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                  <span>Back</span>
+                </Link>
+              </Button>
+            ) : null}
             {/* Self-deactivation is forbidden server-side; hide the
                 button entirely when an admin is viewing their own
                 profile so the UI doesn't tease an action that can't
@@ -394,7 +396,7 @@ export default async function EmployeeDetailPage({ params }: PageProps) {
                           <span className="min-w-0">
                             <span className="text-muted-foreground">{formatDate(p.date)}</span>
                             <span className="ml-2 truncate">{p.description || 'Salary'}</span>
-                            {p.accountName ? (
+                            {isAdmin && p.accountName ? (
                               <span className="ml-2 text-xs text-muted-foreground">· {p.accountName}</span>
                             ) : null}
                           </span>

@@ -22,11 +22,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
-import {
-  errorResponse,
-  parseSearchParams,
-  requireSession,
-} from '@/lib/api-helpers';
+import { errorResponse, parseSearchParams, requireModuleSession } from '@/lib/api-helpers';
 import {
   socialPostPublicProjection,
   socialWinnersQuerySchema,
@@ -48,7 +44,7 @@ const MAX_WINNERS = 500;
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    await requireSession();
+    await requireModuleSession('social');
 
     const query = parseSearchParams(
       req.nextUrl.searchParams,

@@ -42,7 +42,7 @@ import {
   errorResponse,
   parseJsonBody,
   parseSearchParams,
-  requireSession,
+  requireModuleSession,
 } from '@/lib/api-helpers';
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
 import { PermissionError } from '@/lib/permissions';
@@ -97,7 +97,7 @@ const SORT_COLUMN_BY_KEY: Record<
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    await requireSession();
+    await requireModuleSession('marketing');
 
     const query = parseSearchParams(
       req.nextUrl.searchParams,
@@ -192,7 +192,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const session = await requireSession();
+    const session = await requireModuleSession('marketing');
 
     const input = await parseJsonBody(req, campaignCreateSchema);
 

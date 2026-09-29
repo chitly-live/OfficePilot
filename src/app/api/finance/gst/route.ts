@@ -18,7 +18,7 @@ import {
 } from '@/lib/api-helpers';
 import { prisma } from '@/lib/db';
 import { monthLabel } from '@/lib/finance';
-import { gstLedgerDate, itcByHead, itcRunningBalances, syncGstLedgerRows } from '@/lib/gst';
+import { gstLedgerPlan, itcByHead, itcRunningBalances, syncGstLedgerRows } from '@/lib/gst';
 import { assertDatesOpen } from '@/lib/month-close';
 import { gstReturnCreateSchema, gstReturnProjection, type GstReturnPublic } from '@/lib/schemas/gst';
 
@@ -70,9 +70,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // The return writes ledger rows only for money that moved (ITC used / cash).
-    if (input.itcUsed > 0 || input.cashPaid > 0) {
-      await assertDatesOpen(prisma, [gstLedgerDate(input.month, input.paidOn)]);
-    }
+    const plan = await gstLedgerPlan(
+      prisma,
+      { cashTransactionId: null, itcTransactionId: null },
+      {
+        month: input.month,
+        itcUsed: input.itcUsed,
+        cashPaid: input.cashPaid,
+        paidOn: input.paidOn ?? null,
+        cashAccountId: input.cashAccountId ?? null,
+        reference: input.reference ?? null,
+      },
+    );
+    if (plan.changes) await assertDatesOpen(prisma, plan.dates);
 
     let created;
     try {

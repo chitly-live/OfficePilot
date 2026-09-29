@@ -492,11 +492,16 @@ export default async function PartyDetailPage({ params }: PageProps) {
               <CardContent>
                 {accounts.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    None yet.{' '}
-                    <Link href="/finance/accounts" className="underline">
-                      Add an account
-                    </Link>{' '}
-                    and set {party.name} as the owner.
+                    None yet.
+                    {canEdit ? (
+                      <>
+                        {' '}
+                        <Link href="/finance/accounts" className="underline">
+                          Add an account
+                        </Link>{' '}
+                        and set {party.name} as the owner.
+                      </>
+                    ) : null}
                   </p>
                 ) : (
                   <ul className="divide-y">

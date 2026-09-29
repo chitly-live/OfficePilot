@@ -140,11 +140,17 @@ export async function DELETE(
       select: {
         id: true,
         name: true,
+        openingBalance: true,
         _count: { select: { transactions: true } },
       },
     });
     if (!existing) {
       return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    }
+
+    // Its opening balance is part of every closed month's total.
+    if (Math.abs(existing.openingBalance) >= 0.005) {
+      await assertNoClosedMonths(prisma, 'Deleting an account with an opening balance');
     }
 
     if (existing._count.transactions > 0) {

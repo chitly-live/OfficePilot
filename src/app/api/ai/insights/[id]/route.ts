@@ -21,7 +21,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
-import { errorResponse, requireSession } from '@/lib/api-helpers';
+import { errorResponse, requireAdminSession } from '@/lib/api-helpers';
 
 // Force the Node runtime — Prisma is not Edge-compatible. `force-dynamic`
 // disables caching of an authenticated GET whose body varies with role.
@@ -81,7 +81,8 @@ export async function GET(
   context: RouteContext,
 ): Promise<NextResponse> {
   try {
-    const session = await requireSession();
+    // AI Analysis is admin-only; insights carry lead, ad-spend and people data.
+    const session = await requireAdminSession();
     const { id } = context.params;
 
     const select =

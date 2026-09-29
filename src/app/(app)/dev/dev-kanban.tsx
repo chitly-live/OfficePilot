@@ -229,10 +229,13 @@ export interface DevKanbanProps {
    * rows) so large backlogs still render in finite time.
    */
   items: DevTaskPublic[];
+  /** Who is looking — only tasks they may edit can be dragged. */
+  currentUserId?: string;
+  isAdmin?: boolean;
 }
 
 /** See file-level JSDoc. */
-export function DevKanban({ items }: DevKanbanProps) {
+export function DevKanban({ items, currentUserId, isAdmin = true }: DevKanbanProps) {
   const router = useRouter();
 
   // Hold an optimistic copy of the task list so a drop can update
@@ -319,6 +322,10 @@ export function DevKanban({ items }: DevKanbanProps) {
       getItemColumn={(task) => task.status}
       getItemId={(task) => task.id}
       onItemMove={handleMove}
+      // Same rule as the API: admin, the assignee or the reporter.
+      canDragItem={(task) =>
+        isAdmin || task.assigneeId === currentUserId || task.reporterId === currentUserId
+      }
       renderCard={(task) => <DevTaskCard task={task} />}
     />
   );

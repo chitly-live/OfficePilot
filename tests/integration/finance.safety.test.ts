@@ -12,7 +12,12 @@ import { describe, expect, it } from 'vitest';
 
 import { DELETE as reopen, GET as getCloses, POST as close } from '@/app/api/finance/close/route';
 import { PATCH as patchAccount } from '@/app/api/finance/accounts/[id]/route';
+import { PATCH as patchGst } from '@/app/api/finance/gst/[id]/route';
 import { POST as createGst } from '@/app/api/finance/gst/route';
+import {
+  DELETE as deleteAccount,
+} from '@/app/api/finance/accounts/[id]/route';
+import { POST as createAccount } from '@/app/api/finance/accounts/route';
 import {
   DELETE as deleteTransaction,
   PATCH as patchTransaction,
@@ -73,7 +78,7 @@ describe('duplicate warning', () => {
     expect((await post({ ...row, date: '2026-09-20' })).status).toBe(201);
   });
 
-  it('catches a repeated UTR even with a different amount', async () => {
+  it('catches a repeated UTR with the same money, even dated weeks later', async () => {
     const { bank } = await setup();
     const row = {
       date: '2026-09-28',
@@ -84,8 +89,22 @@ describe('duplicate warning', () => {
       reference: 'AXISCN1481398175',
     };
     expect((await post(row)).status).toBe(201);
-    const again = await post({ ...row, amount: 1, reference: 'axiscn1481398175' });
+    const again = await post({ ...row, date: '2026-10-20', reference: 'axiscn1481398175' });
     expect(again.status).toBe(409);
+  });
+
+  it('lets equal IMPS charges on adjacent days through when their UTRs differ', async () => {
+    const { bank } = await setup();
+    const base = { direction: 'OUT', category: 'BANK_CHARGES', accountId: bank.id, amount: 7 };
+    expect((await post({ ...base, date: '2026-08-31', reference: 'ORMB957221750355' })).status).toBe(201);
+    expect((await post({ ...base, date: '2026-09-01', reference: 'ORMB957300000001' })).status).toBe(201);
+  });
+
+  it('lets an IMPS charge and its GST share one reference', async () => {
+    const { bank } = await setup();
+    const base = { date: '2026-09-27', direction: 'OUT', category: 'BANK_CHARGES', accountId: bank.id, reference: 'ORMB960000000001' };
+    expect((await post({ ...base, amount: 6, description: 'IMPS charges for 25-Sep-2026' })).status).toBe(201);
+    expect((await post({ ...base, amount: 1.08, description: 'GST on IMPS charges for 25-Sep-2026' })).status).toBe(201);
   });
 });
 
@@ -312,6 +331,28 @@ describe('month close', () => {
     expect(status!.closes[0]!.drift).toEqual([expect.objectContaining({ difference: -100 })]);
   });
 
+  it('an opening balance cannot be added or removed behind a closed month', async () => {
+    const { bank } = await setup();
+    await post({ date: '2026-08-10', direction: 'IN', category: 'SALES', amount: 1000, accountId: bank.id });
+    const petty = await prisma.financeAccount.create({ data: { name: 'Petty cash', type: 'CASH', openingBalance: 2000 } });
+    await close(buildJsonRequest('POST', CLOSE, { month: '2026-08' }));
+
+    const gone = await deleteAccount(
+      buildJsonRequest('DELETE', `http://test/api/finance/accounts/${petty.id}`),
+      buildRouteContext(petty.id),
+    );
+    expect(gone.status).toBe(409);
+
+    const withOpening = await createAccount(
+      buildJsonRequest('POST', 'http://test/api/finance/accounts', { name: 'HDFC', type: 'BANK', openingBalance: 10000 }),
+    );
+    expect(withOpening.status).toBe(409);
+    const atZero = await createAccount(
+      buildJsonRequest('POST', 'http://test/api/finance/accounts', { name: 'HDFC', type: 'BANK' }),
+    );
+    expect(atZero.status).toBe(201);
+  });
+
   it('only an admin can close', async () => {
     await setup();
     const { user } = await createTestUser({ role: 'ACCOUNTANT', email: 'ca@example.com' });
@@ -348,6 +389,109 @@ describe('GST rows belong to the GST page', () => {
       buildRouteContext(cashRow.id),
     );
     expect(label.status).toBe(200);
+
+    // What the edit form actually sends: every field, only the label changed.
+    const form = await patchTransaction(
+      buildJsonRequest('PATCH', `${TXN}/${cashRow.id}`, {
+        date: '2026-09-17',
+        direction: 'OUT',
+        category: 'TAX',
+        amount: 4279,
+        description: 'GST for August, CPIN 123',
+        reference: 'CPIN 123',
+        partyId: cashRow.partyId,
+        viaPartyId: null,
+        settlesAccountId: null,
+        accountId: bank.id,
+        productId: cashRow.productId,
+        originalAmount: null,
+        originalCurrency: null,
+        dueDate: null,
+      }),
+      buildRouteContext(cashRow.id),
+    );
+    expect(form.status).toBe(200);
+  });
+
+  it('editing notes or ITC claimed on a closed return leaves its rows alone', async () => {
+    const { bank } = await setup();
+    const created = await createGst(
+      buildJsonRequest('POST', 'http://test/api/finance/gst', {
+        month: '2026-07',
+        itcUsed: 1000,
+        cashPaid: 500,
+        paidOn: '2026-08-20',
+        cashAccountId: bank.id,
+      }),
+    );
+    const gst = (await getJson<{ id: string }>(created))!;
+    await close(buildJsonRequest('POST', CLOSE, { month: '2026-08' }));
+    const before = await prisma.financeTransaction.findMany({ orderBy: { id: 'asc' } });
+
+    const notes = await patchGst(
+      buildJsonRequest('PATCH', `http://test/api/finance/gst/${gst.id}`, { notes: 'filed', itcClaimed: 1200 }),
+      buildRouteContext(gst.id),
+    );
+    expect(notes.status).toBe(200);
+    expect(await prisma.financeTransaction.findMany({ orderBy: { id: 'asc' } })).toEqual(before);
+
+    const money = await patchGst(
+      buildJsonRequest('PATCH', `http://test/api/finance/gst/${gst.id}`, { cashPaid: 600 }),
+      buildRouteContext(gst.id),
+    );
+    expect(money.status).toBe(409);
+  });
+
+  it("an admin's label on a GST row survives, and does not block the accountant's ITC edit", async () => {
+    const { bank } = await setup();
+    const created = await createGst(
+      buildJsonRequest('POST', 'http://test/api/finance/gst', {
+        month: '2026-07',
+        cashPaid: 500,
+        paidOn: '2026-08-20',
+        cashAccountId: bank.id,
+      }),
+    );
+    const gst = (await getJson<{ id: string }>(created))!;
+    const row = await prisma.financeTransaction.findFirstOrThrow({ where: { category: 'TAX' } });
+    const relabel = await patchTransaction(
+      buildJsonRequest('PATCH', `${TXN}/${row.id}`, { reference: 'CPIN 555', description: 'GST July, CPIN 555' }),
+      buildRouteContext(row.id),
+    );
+    expect(relabel.status).toBe(200);
+    await close(buildJsonRequest('POST', CLOSE, { month: '2026-08' }));
+
+    const itc = await patchGst(
+      buildJsonRequest('PATCH', `http://test/api/finance/gst/${gst.id}`, { itcClaimed: 900 }),
+      buildRouteContext(gst.id),
+    );
+    expect(itc.status).toBe(200);
+    expect(await prisma.financeTransaction.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+      reference: 'CPIN 555',
+      description: 'GST July, CPIN 555',
+    });
+  });
+
+  it('a return whose row went missing cannot recreate it inside a closed month', async () => {
+    const { bank } = await setup();
+    const created = await createGst(
+      buildJsonRequest('POST', 'http://test/api/finance/gst', {
+        month: '2026-07',
+        cashPaid: 500,
+        paidOn: '2026-08-20',
+        cashAccountId: bank.id,
+      }),
+    );
+    const gst = (await getJson<{ id: string }>(created))!;
+    // A row removed behind the return's back (possible before the GST guard existed).
+    await prisma.financeTransaction.deleteMany({ where: { category: 'TAX' } });
+    await close(buildJsonRequest('POST', CLOSE, { month: '2026-08' }));
+    const res = await patchGst(
+      buildJsonRequest('PATCH', `http://test/api/finance/gst/${gst.id}`, { notes: 'x' }),
+      buildRouteContext(gst.id),
+    );
+    expect(res.status).toBe(409);
+    expect(await prisma.financeTransaction.count()).toBe(0);
   });
 
   it('a closed month blocks a GST return whose rows fall in it', async () => {

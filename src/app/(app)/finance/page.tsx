@@ -531,12 +531,16 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
                     className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm"
                   >
                     <div className="min-w-0">
-                      <Link
-                        href={`/employees/${row.userId}`}
-                        className="font-medium text-foreground hover:underline"
-                      >
-                        {row.name}
-                      </Link>
+                      {canEdit ? (
+                        <Link
+                          href={`/employees/${row.userId}`}
+                          className="font-medium text-foreground hover:underline"
+                        >
+                          {row.name}
+                        </Link>
+                      ) : (
+                        <span className="font-medium text-foreground">{row.name}</span>
+                      )}
                       <span className="ml-2 text-xs text-muted-foreground">
                         {row.salaryLabel || 'Salary'}
                         {row.designation ? ` · ${row.designation}` : ''}
@@ -718,12 +722,18 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
                 {summary.recent.map((row) => (
                   <li key={row.id} className="flex items-center justify-between gap-3 py-2">
                     <div className="min-w-0">
-                      <Link
-                        href={`/finance/transactions/${row.id}`}
-                        className="block truncate text-sm font-medium text-foreground hover:underline"
-                      >
-                        {row.description || row.partyName || categoryLabel(row.category)}
-                      </Link>
+                      {canEdit ? (
+                        <Link
+                          href={`/finance/transactions/${row.id}`}
+                          className="block truncate text-sm font-medium text-foreground hover:underline"
+                        >
+                          {row.description || row.partyName || categoryLabel(row.category)}
+                        </Link>
+                      ) : (
+                        <span className="block truncate text-sm font-medium text-foreground">
+                          {row.description || row.partyName || categoryLabel(row.category)}
+                        </span>
+                      )}
                       <div className="truncate text-xs text-muted-foreground">
                         {formatDateUtc(row.date)} · {categoryLabel(row.category)}
                         {row.partyName && row.description ? ` · ${row.partyName}` : ''}

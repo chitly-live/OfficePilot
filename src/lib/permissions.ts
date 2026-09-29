@@ -354,6 +354,10 @@ export function canAccessModule(
   // list becomes the exhaustive whitelist.
   const list = user.moduleAccess ?? [];
   if (list.length === 0) return true;
+  // The dashboard is where every employee lands and where every denied
+  // page sends them. Its widgets hide what the other modules don't allow,
+  // so it is never locked — locking it would redirect to itself forever.
+  if (moduleId === 'dashboard') return true;
   return list.includes(moduleId);
 }
 

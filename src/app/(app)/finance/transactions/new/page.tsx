@@ -75,6 +75,9 @@ export default async function NewTransactionPage({
           accountId: true,
           settlesAccountId: true,
           productId: true,
+          originalAmount: true,
+          originalCurrency: true,
+          cardAllocations: { select: { accountId: true, amount: true } },
         },
       })
     : null;
@@ -201,7 +204,17 @@ export default async function NewTransactionPage({
               ...(copy?.settlesAccountId && accounts.some((a) => a.id === copy.settlesAccountId)
                 ? { settlesAccountId: copy.settlesAccountId }
                 : {}),
+              ...(copy?.originalAmount != null && copy.originalCurrency
+                ? {
+                    hasOriginal: true,
+                    originalAmount: String(copy.originalAmount),
+                    originalCurrency: copy.originalCurrency,
+                  }
+                : {}),
             }}
+            initialSplit={(copy?.cardAllocations ?? []).filter((a) =>
+              accounts.some((acc) => acc.id === a.accountId),
+            )}
             returnTo={returnTo}
           />
         </CardContent>

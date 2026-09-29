@@ -73,8 +73,9 @@ interface WireView {
       category: FinanceCategory | null;
       partyId: string | null;
       partyName: string | null;
+      viaPartyId: string | null;
       description: string;
-      basis: 'history' | 'rule' | 'none';
+      basis: 'history' | 'rule' | 'party' | 'none';
     };
   }[];
   extra: WireRow[];
@@ -89,11 +90,23 @@ interface WireView {
 interface Draft {
   category: string;
   partyId: string;
+  /** Intermediary the bank paid (from the payee's past entries). */
+  viaPartyId: string | null;
+  /** Card repayments: which card it settles — '' until chosen, NONE_VALUE for "not per card". */
+  settlesAccountId: string;
   description: string;
+}
+
+/** Ready to add: a category, and for a card repayment an explicit card choice. */
+function isReady(d: Draft | undefined): boolean {
+  if (!d || d.category === NONE_VALUE) return false;
+  return d.category !== 'CARD_REPAYMENT' || d.settlesAccountId !== '';
 }
 
 export interface ReconcileToolProps {
   accounts: { id: string; name: string }[];
+  /** Credit cards a repayment line can settle. */
+  cards: { id: string; name: string }[];
   parties: { id: string; name: string }[];
   /** Tag new rows with the panel's product, like every other row. */
   productId: string | null;
@@ -103,7 +116,14 @@ export interface ReconcileToolProps {
 
 const lineKey = (l: WireLine) => `${l.line}`;
 
-export function ReconcileTool({ accounts, parties, productId, canEdit, lockedThrough }: ReconcileToolProps) {
+export function ReconcileTool({
+  accounts,
+  cards,
+  parties,
+  productId,
+  canEdit,
+  lockedThrough,
+}: ReconcileToolProps) {
   const router = useRouter();
   const [accountId, setAccountId] = React.useState(accounts[0]?.id ?? '');
   const [csv, setCsv] = React.useState('');
@@ -135,6 +155,8 @@ export function ReconcileTool({ accounts, parties, productId, canEdit, lockedThr
             {
               category: m.suggestion.category ?? NONE_VALUE,
               partyId: m.suggestion.partyId ?? NONE_VALUE,
+              viaPartyId: m.suggestion.viaPartyId,
+              settlesAccountId: '',
               description: m.suggestion.description,
             },
           ]),
@@ -156,8 +178,13 @@ export function ReconcileTool({ accounts, parties, productId, canEdit, lockedThr
   /** Post one missing line. Returns false (and says why) when it did not go in. */
   async function addLine(m: WireView['missing'][number], confirmDuplicate = false): Promise<boolean> {
     const d = drafts[lineKey(m.line)];
+    if (!view) return false;
     if (!d || d.category === NONE_VALUE) {
       toast.error(`Pick a category for the ${formatInr(m.line.amount)} line on ${formatDateUtc(m.line.date)}.`);
+      return false;
+    }
+    if (d.category === 'CARD_REPAYMENT' && d.settlesAccountId === '') {
+      toast.error(`Pick the card the ${formatInr(m.line.amount)} repayment settles.`);
       return false;
     }
     const result = await requestJson('/api/finance/transactions', {
@@ -167,10 +194,17 @@ export function ReconcileTool({ accounts, parties, productId, canEdit, lockedThr
         direction: m.line.direction,
         category: d.category,
         amount: m.line.amount,
-        accountId,
+        // Always the account this statement was compared against.
+        accountId: view.account.id,
         ...(d.description.trim() ? { description: d.description.trim() } : {}),
         ...(m.line.reference ? { reference: m.line.reference } : {}),
         ...(d.partyId !== NONE_VALUE ? { partyId: d.partyId } : {}),
+        ...(d.viaPartyId && d.partyId !== NONE_VALUE && d.viaPartyId !== d.partyId
+          ? { viaPartyId: d.viaPartyId }
+          : {}),
+        ...(d.category === 'CARD_REPAYMENT' && d.settlesAccountId !== NONE_VALUE
+          ? { settlesAccountId: d.settlesAccountId }
+          : {}),
         ...(productId ? { productId } : {}),
         ...(confirmDuplicate ? { confirmDuplicate: true } : {}),
       },
@@ -207,10 +241,7 @@ export function ReconcileTool({ accounts, parties, productId, canEdit, lockedThr
 
   async function addAllSuggested() {
     if (!view) return;
-    const ready = view.missing.filter((m) => {
-      const d = drafts[lineKey(m.line)];
-      return d && d.category !== NONE_VALUE;
-    });
+    const ready = view.missing.filter((m) => isReady(drafts[lineKey(m.line)]));
     setAdding('all');
     let added = 0;
     for (const m of ready) {
@@ -243,9 +274,7 @@ export function ReconcileTool({ accounts, parties, productId, canEdit, lockedThr
   const setDraft = (key: string, patch: Partial<Draft>) =>
     setDrafts((prev) => ({ ...prev, [key]: { ...prev[key]!, ...patch } }));
 
-  const readyCount = view
-    ? view.missing.filter((m) => (drafts[lineKey(m.line)]?.category ?? NONE_VALUE) !== NONE_VALUE).length
-    : 0;
+  const readyCount = view ? view.missing.filter((m) => isReady(drafts[lineKey(m.line)])).length : 0;
   const monthClosed = Boolean(view?.month && (view.lockedThrough ?? lockedThrough) && view.month <= (view.lockedThrough ?? lockedThrough)!);
 
   return (
@@ -264,7 +293,14 @@ export function ReconcileTool({ accounts, parties, productId, canEdit, lockedThr
               <Label htmlFor="rec-account" className="text-xs">
                 Account
               </Label>
-              <Select value={accountId} onValueChange={setAccountId}>
+              <Select
+                value={accountId}
+                onValueChange={(v) => {
+                  setAccountId(v);
+                  setView(null);
+                  setDrafts({});
+                }}
+              >
                 <SelectTrigger id="rec-account" className="w-full sm:w-56">
                   <SelectValue placeholder="Pick an account" />
                 </SelectTrigger>
@@ -423,7 +459,16 @@ export function ReconcileTool({ accounts, parties, productId, canEdit, lockedThr
                                       ))}
                                     </SelectContent>
                                   </Select>
-                                  <Select value={d.partyId} onValueChange={(v) => setDraft(key, { partyId: v })}>
+                                  <Select
+                                    value={d.partyId}
+                                    onValueChange={(v) =>
+                                      setDraft(key, {
+                                        partyId: v,
+                                        // The routed-via person belongs to the suggested party only.
+                                        viaPartyId: v === m.suggestion.partyId ? m.suggestion.viaPartyId : null,
+                                      })
+                                    }
+                                  >
                                     <SelectTrigger className="h-8 text-xs">
                                       <SelectValue />
                                     </SelectTrigger>
@@ -437,6 +482,24 @@ export function ReconcileTool({ accounts, parties, productId, canEdit, lockedThr
                                     </SelectContent>
                                   </Select>
                                 </div>
+                                {d.category === 'CARD_REPAYMENT' ? (
+                                  <Select
+                                    value={d.settlesAccountId || undefined}
+                                    onValueChange={(v) => setDraft(key, { settlesAccountId: v })}
+                                  >
+                                    <SelectTrigger className="h-8 text-xs" aria-label="Card it settles">
+                                      <SelectValue placeholder="Which card does it settle?" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value={NONE_VALUE}>Not tracked per card</SelectItem>
+                                      {cards.map((c) => (
+                                        <SelectItem key={c.id} value={c.id}>
+                                          {c.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                ) : null}
                                 <Input
                                   className="h-8 text-xs"
                                   value={d.description}
@@ -445,7 +508,13 @@ export function ReconcileTool({ accounts, parties, productId, canEdit, lockedThr
                                   aria-label="Description"
                                 />
                                 {m.suggestion.basis === 'history' ? (
-                                  <span className="text-[11px] text-muted-foreground">Filled from a similar past entry</span>
+                                  <span className="text-[11px] text-muted-foreground">
+                                    Filled from {m.suggestion.partyName ?? 'this payee'}&apos;s past entries
+                                  </span>
+                                ) : m.suggestion.basis === 'party' ? (
+                                  <span className="text-[11px] text-muted-foreground">
+                                    Payee matched to {m.suggestion.partyName} — pick a category
+                                  </span>
                                 ) : null}
                               </div>
                             </td>
@@ -509,9 +578,14 @@ export function ReconcileTool({ accounts, parties, productId, canEdit, lockedThr
                           {formatInr(r.amount)}
                         </td>
                         <td className="py-2 text-right">
-                          <Link href={`/finance/transactions/${r.id}`} className="text-xs font-medium text-primary hover:underline">
-                            Open
-                          </Link>
+                          {canEdit ? (
+                            <Link
+                              href={`/finance/transactions/${r.id}`}
+                              className="text-xs font-medium text-primary hover:underline"
+                            >
+                              Open
+                            </Link>
+                          ) : null}
                         </td>
                       </tr>
                     ))}

@@ -293,6 +293,15 @@ export async function PATCH(
     }
     // else: employee, no moduleAccess in body → leave column as-is.
 
+    // New permissions only reach the middleware through a fresh sign-in,
+    // so a changed role or module list ends the user's current sessions.
+    const roleChanged = input.role !== undefined && input.role !== existing.role;
+    const modulesChanged =
+      nextModuleAccess !== undefined && !moduleAccessEqual(nextModuleAccess, previousModuleAccess);
+    if (roleChanged || modulesChanged) {
+      data.sessionsRevokedAt = new Date();
+    }
+
     const updated = await prisma.user.update({
       where: { id },
       data,

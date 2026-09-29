@@ -13,7 +13,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   ArrowDownLeft,
@@ -173,6 +173,8 @@ export interface TransactionFormProps {
 }
 
 interface SplitPart {
+  /** Stable row key — rows are added and removed, so the index won't do. */
+  key: string;
   accountId: string;
   amount: string;
 }
@@ -206,12 +208,14 @@ export function TransactionForm({
 
   // One payment that cleared several cards: each card's share.
   const [splitMode, setSplitMode] = React.useState(initialSplit.length > 0);
-  const [splitParts, setSplitParts] = React.useState<SplitPart[]>(
+  const nextSplitKey = React.useRef(0);
+  const newSplitPart = (): SplitPart => ({ key: `new-${nextSplitKey.current++}`, accountId: '', amount: '' });
+  const [splitParts, setSplitParts] = React.useState<SplitPart[]>(() =>
     initialSplit.length > 0
-      ? initialSplit.map((p) => ({ accountId: p.accountId, amount: String(p.amount) }))
+      ? initialSplit.map((p, i) => ({ key: `init-${i}`, accountId: p.accountId, amount: String(p.amount) }))
       : [
-          { accountId: '', amount: '' },
-          { accountId: '', amount: '' },
+          { key: 'init-0', accountId: '', amount: '' },
+          { key: 'init-1', accountId: '', amount: '' },
         ],
   );
   const [splitError, setSplitError] = React.useState<string | null>(null);
@@ -275,6 +279,14 @@ export function TransactionForm({
 
   const showDueDate =
     category === 'LOAN_RECEIVED' || category === 'LOAN_REPAYMENT';
+
+  // A field folded under "More details" that fails validation would block
+  // the save with its message hidden — unfold so it shows.
+  const onInvalid = (errors: FieldErrors<FormValues>) => {
+    if (errors.viaPartyId || errors.hasOriginal || errors.originalAmount || errors.originalCurrency) {
+      setShowMore(true);
+    }
+  };
 
   const amountValue = Number(form.watch('amount')) || 0;
   const splitTotal = round2(splitParts.reduce((s, p) => s + (Number(p.amount) || 0), 0));
@@ -382,7 +394,7 @@ export function TransactionForm({
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit((v) => onSubmit(v))}
+        onSubmit={form.handleSubmit((v) => onSubmit(v), onInvalid)}
         className="space-y-5"
         noValidate
       >
@@ -633,18 +645,23 @@ export function TransactionForm({
               <div className="space-y-2">
                 <p className="text-sm font-medium">Cards this one payment cleared</p>
                 {splitParts.map((part, i) => (
-                  <div key={i} className="flex gap-2">
+                  <div key={part.key} className="flex gap-2">
                     <Select
-                      value={part.accountId || undefined}
+                      value={part.accountId || NONE_VALUE}
                       onValueChange={(v) =>
-                        setSplitParts((prev) => prev.map((p, j) => (j === i ? { ...p, accountId: v } : p)))
+                        setSplitParts((prev) =>
+                          prev.map((p) =>
+                            p.key === part.key ? { ...p, accountId: v === NONE_VALUE ? '' : v } : p,
+                          ),
+                        )
                       }
                       disabled={isSubmitting}
                     >
                       <SelectTrigger className="flex-1" aria-label={`Card ${i + 1}`}>
-                        <SelectValue placeholder="Pick a card" />
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value={NONE_VALUE}>Pick a card</SelectItem>
                         {cards.map((a) => (
                           <SelectItem key={a.id} value={a.id}>
                             {a.name}
@@ -662,7 +679,9 @@ export function TransactionForm({
                       aria-label={`Amount for card ${i + 1}`}
                       value={part.amount}
                       onChange={(e) =>
-                        setSplitParts((prev) => prev.map((p, j) => (j === i ? { ...p, amount: e.target.value } : p)))
+                        setSplitParts((prev) =>
+                          prev.map((p) => (p.key === part.key ? { ...p, amount: e.target.value } : p)),
+                        )
                       }
                       disabled={isSubmitting}
                     />
@@ -672,7 +691,7 @@ export function TransactionForm({
                       size="icon"
                       aria-label="Remove card"
                       disabled={isSubmitting || splitParts.length <= 2}
-                      onClick={() => setSplitParts((prev) => prev.filter((_, j) => j !== i))}
+                      onClick={() => setSplitParts((prev) => prev.filter((p) => p.key !== part.key))}
                     >
                       <X className="h-4 w-4" aria-hidden="true" />
                     </Button>
@@ -684,7 +703,7 @@ export function TransactionForm({
                     variant="outline"
                     size="sm"
                     disabled={isSubmitting || splitParts.length >= cards.length}
-                    onClick={() => setSplitParts((prev) => [...prev, { accountId: '', amount: '' }])}
+                    onClick={() => setSplitParts((prev) => [...prev, newSplitPart()])}
                   >
                     <Plus className="h-4 w-4" aria-hidden="true" />
                     <span>Add card</span>
@@ -983,7 +1002,7 @@ export function TransactionForm({
                 type="button"
                 size="sm"
                 disabled={isSubmitting}
-                onClick={form.handleSubmit((v) => onSubmit(v, true))}
+                onClick={form.handleSubmit((v) => onSubmit(v, true), onInvalid)}
               >
                 It is a separate payment — save it
               </Button>

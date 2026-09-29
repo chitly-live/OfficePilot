@@ -38,8 +38,10 @@ import {
 } from '@/lib/schemas/campaigns';
 import {
   leadPublicProjection,
+  withoutLeadContact,
   type LeadPublic,
 } from '@/lib/schemas/leads';
+import { canAccessModule } from '@/lib/permissions';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -177,7 +179,15 @@ export default async function CampaignDetailPage({ params }: PageProps) {
       ])
     : [[] as Array<unknown>, 0];
 
-  const linkedLeads = linkedLeadRows as LeadPublic[];
+  // Contact details belong to the Leads module; without it a marketing
+  // employee sees that the leads exist, not how to reach them.
+  const canSeeLeadContacts = canAccessModule(
+    session ? { role: session.role, moduleAccess: session.moduleAccess ?? [] } : null,
+    'leads',
+  );
+  const linkedLeads = (
+    canSeeLeadContacts ? linkedLeadRows : (linkedLeadRows as Record<string, unknown>[]).map(withoutLeadContact)
+  ) as LeadPublic[];
 
   // The API enforces "ADMIN or owner" for any PATCH; mirror that
   // here so disabled inputs render correctly when the current user

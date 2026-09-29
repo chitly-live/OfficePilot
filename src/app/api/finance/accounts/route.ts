@@ -20,6 +20,7 @@ import {
 import { ACTIVITY_ACTIONS, logActivity } from '@/lib/activity';
 import { resolveOwnerParty } from '@/lib/finance-refs';
 import { loadAccountBalances } from '@/lib/finance-summary';
+import { assertNoClosedMonths } from '@/lib/month-close';
 import {
   financeAccountCreateSchema,
   financeAccountListQuerySchema,
@@ -70,6 +71,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const input = await parseJsonBody(req, financeAccountCreateSchema);
 
     await resolveOwnerParty(prisma, input.ownerPartyId);
+
+    // An opening balance sits before every row, so it would change the
+    // totals of months already closed. Start at zero and record the money
+    // as an entry dated after the lock instead — or reopen first.
+    if (input.openingBalance !== undefined && Math.abs(input.openingBalance) >= 0.005) {
+      await assertNoClosedMonths(prisma, 'An opening balance on a new account');
+    }
 
     const created = await prisma.financeAccount.create({
       data: {

@@ -154,10 +154,17 @@ export default async function AssetDetailPage({ params }: PageProps) {
               <Fact label="Cost">{asset.cost != null ? formatInr(asset.cost) : '—'}</Fact>
               <Fact label="Paid by">
                 {asset.transaction ? (
-                  <Link href={`/finance/transactions/${asset.transaction.id}`} className="text-primary hover:underline">
-                    {formatDateUtc(asset.transaction.date)} · {formatInr(asset.transaction.amount)}
-                    {asset.transaction.account ? ` · ${asset.transaction.account.name}` : ''}
-                  </Link>
+                  canEdit ? (
+                    <Link href={`/finance/transactions/${asset.transaction.id}`} className="text-primary hover:underline">
+                      {formatDateUtc(asset.transaction.date)} · {formatInr(asset.transaction.amount)}
+                      {asset.transaction.account ? ` · ${asset.transaction.account.name}` : ''}
+                    </Link>
+                  ) : (
+                    <span>
+                      {formatDateUtc(asset.transaction.date)} · {formatInr(asset.transaction.amount)}
+                      {asset.transaction.account ? ` · ${asset.transaction.account.name}` : ''}
+                    </span>
+                  )
                 ) : (
                   <span className="text-status-amber">Not linked to a payment</span>
                 )}
