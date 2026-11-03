@@ -2,11 +2,13 @@
  * Integration tests for monthly GST returns (`/api/finance/gst`).
  *
  *   • ACCOUNTANT can create + edit a month (their only write); ADMIN too
- *   • Saving writes the two TAX ledger rows (cash on the chosen account,
- *     ITC with no account) under the Government (GST) party
- *   • Editing keeps the rows in sync; zeroing a part removes its row
+ *   • Saving writes ONE TAX ledger row — the cash part, on the chosen
+ *     account, under the Government (GST) party. The ITC set-off stays on
+ *     the return (the GST inside purchases is already an expense).
+ *   • Editing keeps the cash row in sync; zeroing cash removes it; a
+ *     leftover ITC row from the older scheme is removed on the next save
  *   • One return per month (409 on duplicate); DELETE is admin-only and
- *     removes both rows
+ *     removes the row
  */
 
 import { describe, expect, it } from 'vitest';
@@ -47,7 +49,7 @@ async function taxRows() {
 }
 
 describe('POST /api/finance/gst', () => {
-  it('accountant records a month; two TAX rows appear under Government (GST)', async () => {
+  it('accountant records a month; only the cash part becomes a TAX row', async () => {
     const card = await seedCard();
     await asRole('ACCOUNTANT');
 
@@ -63,15 +65,13 @@ describe('POST /api/finance/gst', () => {
       }),
     );
     expect(res.status).toBe(201);
-    const body = await getJson<{ id: string; cashTransactionId: string; itcTransactionId: string }>(res);
+    const body = await getJson<{ id: string; cashTransactionId: string; itcTransactionId: string | null }>(res);
     expect(body!.cashTransactionId).toBeTruthy();
-    expect(body!.itcTransactionId).toBeTruthy();
+    expect(body!.itcTransactionId).toBeNull();
 
     const rows = await taxRows();
-    expect(rows).toHaveLength(2);
     expect(rows.map((r) => [r.amount, r.accountId, r.party?.name, r.reference])).toEqual([
       [4279, card.id, GST_PARTY_NAME, 'CHALLAN-123'],
-      [18012, null, GST_PARTY_NAME, 'CHALLAN-123'],
     ]);
     expect(rows[0].date.toISOString()).toBe('2026-09-17T00:00:00.000Z');
 
@@ -81,24 +81,24 @@ describe('POST /api/finance/gst', () => {
     }>(await listReturns());
     expect(list!.items.map((i) => [i.month, i.itcClaimed, i.itcBalance])).toEqual([['2026-08', 21000, 2988]]);
     expect(list!.totals).toEqual({ itcClaimed: 21000, itcUsed: 18012, cashPaid: 4279, itcBalance: 2988 });
-    // ITC claimed never becomes a ledger row.
-    expect(await prisma.financeTransaction.count()).toBe(2);
+    // Neither ITC claimed nor ITC used becomes a ledger row.
+    expect(await prisma.financeTransaction.count()).toBe(1);
   });
 
-  it('a claim-only month writes no ledger row but seeds the ITC balance', async () => {
+  it('claim-only and ITC-only months write no ledger row but move the ITC balance', async () => {
     await asRole('ACCOUNTANT');
     expect((await createReturn(buildJsonRequest('POST', BASE, { month: '2026-06', itcClaimed: 5000 }))).status).toBe(201);
     expect((await createReturn(buildJsonRequest('POST', BASE, { month: '2026-07', itcClaimed: 4000, itcUsed: 6000 }))).status).toBe(201);
-    expect(await prisma.financeTransaction.count()).toBe(1);
+    expect(await prisma.financeTransaction.count()).toBe(0);
     const rows = await prisma.gstReturn.findMany({ select: { month: true, itcClaimed: true, itcUsed: true } });
     const bal = itcRunningBalances(rows);
     expect(bal.get('2026-06')).toBe(5000);
     expect(bal.get('2026-07')).toBe(3000);
   });
 
-  it('ITC-only return: one row, dated the 20th of the next month; duplicate month is 409', async () => {
+  it('cash with no date or account: one row, dated the 20th of the next month; duplicate month is 409', async () => {
     await asRole('ADMIN');
-    const res = await createReturn(buildJsonRequest('POST', BASE, { month: '2026-07', itcUsed: 9000 }));
+    const res = await createReturn(buildJsonRequest('POST', BASE, { month: '2026-07', itcUsed: 3000, cashPaid: 9000 }));
     expect(res.status).toBe(201);
 
     const rows = await taxRows();
@@ -128,7 +128,7 @@ describe('POST /api/finance/gst', () => {
 });
 
 describe('Head-wise (IGST / CGST / SGST) figures', () => {
-  it('totals are derived from the heads and the ledger rows follow them', async () => {
+  it('totals are derived from the heads and the cash row follows them', async () => {
     const card = await seedCard();
     await asRole('ACCOUNTANT');
 
@@ -154,7 +154,7 @@ describe('Head-wise (IGST / CGST / SGST) figures', () => {
     expect(body!.cashPaid).toBe(4279);
 
     const rows = await taxRows();
-    expect(rows.map((r) => r.amount)).toEqual([4279, 18012]);
+    expect(rows.map((r) => r.amount)).toEqual([4279]);
 
     const list = await getJson<{
       byHead: { igst: { balance: number }; cgst: { balance: number }; sgst: { balance: number } };
@@ -170,7 +170,7 @@ describe('Head-wise (IGST / CGST / SGST) figures', () => {
     );
     expect(patched.status).toBe(200);
     expect((await getJson<{ cashPaid: number }>(patched))!.cashPaid).toBe(5279);
-    expect((await taxRows()).map((r) => r.amount)).toEqual([5279, 18012]);
+    expect((await taxRows()).map((r) => r.amount)).toEqual([5279]);
   });
 
   it('itcByHead keeps the three heads separate', () => {
@@ -186,7 +186,7 @@ describe('Head-wise (IGST / CGST / SGST) figures', () => {
 });
 
 describe('PATCH / DELETE /api/finance/gst/[id]', () => {
-  it('editing re-syncs the ledger rows; zeroing cash removes that row', async () => {
+  it('editing re-syncs the cash row; zeroing cash removes it', async () => {
     const card = await seedCard();
     await asRole('ACCOUNTANT');
     const created = await getJson<{ id: string; cashTransactionId: string }>(
@@ -202,12 +202,9 @@ describe('PATCH / DELETE /api/finance/gst/[id]', () => {
     );
     expect(patched.status).toBe(200);
     let rows = await taxRows();
-    expect(rows.map((r) => [r.amount, r.accountId])).toEqual([
-      [2291, card.id],
-      [20000, null],
-    ]);
-    // Same row ids were updated, not recreated.
-    expect(rows.find((r) => r.amount === 2291)!.id).toBe(created!.cashTransactionId);
+    expect(rows.map((r) => [r.amount, r.accountId])).toEqual([[2291, card.id]]);
+    // Same row id was updated, not recreated.
+    expect(rows[0].id).toBe(created!.cashTransactionId);
 
     // Zero the cash part → its row disappears; the return still exists.
     const zeroed = await patchReturn(
@@ -217,7 +214,7 @@ describe('PATCH / DELETE /api/finance/gst/[id]', () => {
     expect(zeroed.status).toBe(200);
     expect((await getJson<{ cashTransactionId: string | null }>(zeroed))!.cashTransactionId).toBeNull();
     rows = await taxRows();
-    expect(rows.map((r) => r.amount)).toEqual([20000]);
+    expect(rows).toEqual([]);
 
     // Cannot zero everything.
     expect(
@@ -240,7 +237,39 @@ describe('PATCH / DELETE /api/finance/gst/[id]', () => {
     expect(await prisma.financeTransaction.count({ where: { category: 'TAX' } })).toBe(0);
   });
 
-  it('delete is admin-only and removes both ledger rows', async () => {
+  it('a leftover ITC row from the older scheme is removed on the next save', async () => {
+    const card = await seedCard();
+    await asRole('ADMIN');
+    const created = await getJson<{ id: string; createdById: string }>(
+      await createReturn(
+        buildJsonRequest('POST', BASE, { month: '2026-08', itcUsed: 18012, cashPaid: 4279, cashAccountId: card.id }),
+      ),
+    );
+    // What the two-row scheme left behind: an account-less TAX row for the ITC part.
+    const legacy = await prisma.financeTransaction.create({
+      data: {
+        date: new Date('2026-09-17T00:00:00.000Z'),
+        direction: 'OUT',
+        category: 'TAX',
+        amount: 18012,
+        description: 'GST payment, Aug 2026 return — set off against input tax credit, no cash paid',
+        createdById: created!.createdById,
+      },
+    });
+    await prisma.gstReturn.update({ where: { id: created!.id }, data: { itcTransactionId: legacy.id } });
+
+    // Changing only the notes still clears it.
+    const patched = await patchReturn(
+      buildJsonRequest('PATCH', `${BASE}/${created!.id}`, { notes: 'Checked against the portal' }),
+      buildRouteContext(created!.id),
+    );
+    expect(patched.status).toBe(200);
+    expect((await getJson<{ itcTransactionId: string | null }>(patched))!.itcTransactionId).toBeNull();
+    expect((await taxRows()).map((r) => [r.amount, r.accountId])).toEqual([[4279, card.id]]);
+    expect(await prisma.financeTransaction.findUnique({ where: { id: legacy.id } })).toBeNull();
+  });
+
+  it('delete is admin-only and removes the cash row', async () => {
     const card = await seedCard();
     await asRole('ADMIN');
     const created = await getJson<{ id: string }>(
@@ -248,7 +277,7 @@ describe('PATCH / DELETE /api/finance/gst/[id]', () => {
         buildJsonRequest('POST', BASE, { month: '2026-08', itcUsed: 100, cashPaid: 50, cashAccountId: card.id }),
       ),
     );
-    expect(await prisma.financeTransaction.count({ where: { category: 'TAX' } })).toBe(2);
+    expect(await prisma.financeTransaction.count({ where: { category: 'TAX' } })).toBe(1);
 
     await asRole('ACCOUNTANT');
     expect(

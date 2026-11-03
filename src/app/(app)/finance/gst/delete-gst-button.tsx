@@ -36,7 +36,7 @@ export function DeleteGstButton({ id, label }: { id: string; label: string }) {
         description={
           <>
             The return for <span className="font-medium text-foreground">{label}</span> and
-            both of its ledger rows (cash and ITC) will be removed.
+            its cash ledger row will be removed.
           </>
         }
         confirmLabel="Delete"

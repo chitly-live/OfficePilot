@@ -163,8 +163,9 @@ export default async function GstPage() {
         <CardHeader>
           <CardTitle className="text-base">Returns</CardTitle>
           <CardDescription>
-            ITC claimed only moves the balance. The paid figures write two ledger entries under
-            Government (GST): cash against the chosen account, ITC with no account.
+            ITC claimed and GST paid by ITC stay on this page and move the balance. Only the cash
+            paid becomes a ledger entry under Government (GST), on the chosen account — the GST
+            inside purchase bills is already counted in those expenses.
           </CardDescription>
         </CardHeader>
         <CardContent>

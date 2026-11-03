@@ -657,6 +657,8 @@ model GstReturn {
   /// the credit ledger; no cash moves and no ledger row is written.
   itcClaimed Float @default(0)
   /// Portion of the liability set off against input tax credit (INR).
+  /// Kept on the return only: the GST inside purchases is already an
+  /// expense, so no ledger row is written for it.
   itcUsed    Float @default(0)
   /// Portion paid in cash through the GST portal (INR).
   cashPaid   Float @default(0)
@@ -686,6 +688,8 @@ model GstReturn {
 
   cashTransactionId String?             @unique
   cashTransaction   FinanceTransaction? @relation("GstReturnCash", fields: [cashTransactionId], references: [id], onDelete: SetNull)
+  /// Legacy: the ITC row of the older two-row scheme. No longer written;
+  /// a leftover row is removed the next time the return is saved.
   itcTransactionId  String?             @unique
   itcTransaction    FinanceTransaction? @relation("GstReturnItc", fields: [itcTransactionId], references: [id], onDelete: SetNull)
 

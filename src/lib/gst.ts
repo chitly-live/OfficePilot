@@ -3,16 +3,19 @@
  *
  * A return says how the month's liability was settled: `itcUsed` (input
  * tax credit — no cash moves) and `cashPaid` (through the GST portal).
- * Saving keeps two TAX rows in the ledger in sync with those figures:
+ * Saving keeps ONE TAX row in the ledger in sync with those figures:
  *
  *   • cash row — party "GOVERNMENT (GST)", `cashPaid`, on `cashAccountId`
- *     (or no account until the admin says which bank / card paid);
- *   • ITC row  — party "GOVERNMENT (GST)", `itcUsed`, never on an account.
+ *     (or no account until the admin says which bank / card paid).
  *
- * Both rows are dated `paidOn` (falling back to the 20th of the following
+ * The ITC set-off stays on the return. Purchases are booked gross, so the
+ * GST inside them (the credit being used) is already an expense; a ledger
+ * row for `itcUsed` would count the same rupees a second time. Returns
+ * saved under the older two-row scheme lose their ITC row on the next save.
+ *
+ * The cash row is dated `paidOn` (falling back to the 20th of the following
  * month, the GSTR-3B due date) and tagged to the first active product.
- * A zero amount removes the corresponding row. Deleting the return removes
- * both rows.
+ * A zero amount removes the row. Deleting the return removes it.
  */
 
 import type { Prisma, PrismaClient } from '@prisma/client';
@@ -71,14 +74,10 @@ function cashDescription(f: GstReturnFigures): string {
   return `GST payment, ${monthLabel(f.month)} return — cash part (total ${total.toLocaleString('en-IN')})`;
 }
 
-function itcDescription(f: GstReturnFigures): string {
-  const total = Math.round((f.itcUsed + f.cashPaid) * 100) / 100;
-  return `GST payment, ${monthLabel(f.month)} return — set off against input tax credit, no cash paid (total ${total.toLocaleString('en-IN')})`;
-}
-
 /**
- * Create / update / remove the ledger rows for one return so they match
- * `figures`. Returns the (possibly new) row ids. Must run inside the same
+ * Create / update / remove the cash ledger row for one return so it matches
+ * `figures`, and drop any ITC row left by the older scheme. Returns the row
+ * ids to store (the ITC id is always null now). Must run inside the same
  * transaction as the GstReturn write.
  */
 export async function syncGstLedgerRows(
@@ -135,21 +134,19 @@ export async function syncGstLedgerRows(
     cashDescription(figures),
     figures.cashAccountId,
   );
-  const itcTransactionId = await upsertRow(
-    existing.itcTransactionId,
-    figures.itcUsed,
-    itcDescription(figures),
-    null,
-  );
-  return { cashTransactionId, itcTransactionId };
+  if (existing.itcTransactionId) {
+    await tx.financeTransaction.deleteMany({ where: { id: existing.itcTransactionId } });
+  }
+  return { cashTransactionId, itcTransactionId: null };
 }
 
 /**
  * What saving (or deleting, with `figures = null`) a return would do to its
- * two ledger rows, judged from the rows as they actually are — a row may
- * have been edited or removed since the return last wrote it. `changes` is
- * false when every row already matches, so nothing needs touching; `dates`
- * are every ledger date involved, old and new, for the month-lock check.
+ * ledger rows, judged from the rows as they actually are — a row may have
+ * been edited or removed since the return last wrote it. A leftover ITC row
+ * always counts as a change: saving removes it. `changes` is false when
+ * nothing needs touching; `dates` are every ledger date involved, old and
+ * new, for the month-lock check.
  */
 export async function gstLedgerPlan(
   db: Tx | PrismaClient,
@@ -176,10 +173,7 @@ export async function gstLedgerPlan(
     },
     {
       current: ids.itcTransactionId ? byId.get(ids.itcTransactionId) ?? null : null,
-      target:
-        figures && figures.itcUsed > 0
-          ? { amount: figures.itcUsed, accountId: null as string | null }
-          : null,
+      target: null,
     },
   ];
 
