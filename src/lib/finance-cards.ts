@@ -82,6 +82,19 @@ export function cardLedgerRows(cardId: string, rows: readonly CardSourceRow[]): 
     });
 }
 
+/**
+ * Rupees of `rows` that settled this card from elsewhere: a bank repayment's
+ * split share, or its whole amount when it settles the card outright. A
+ * card's own rows are only its spend, so adding this to the card's balance
+ * turns "everything ever spent on it" into "what is still owed on it".
+ */
+export function settledOnCard(cardId: string, rows: readonly CardSourceRow[]): number {
+  const total = cardLedgerRows(cardId, rows)
+    .filter((r) => !r.onCard && r.direction === 'OUT')
+    .reduce((s, r) => s + (r.settlesAmount ?? (r.settlesCard ? r.amount : 0)), 0);
+  return Math.round(total * 100) / 100;
+}
+
 export async function loadCardOverview(
   db: PrismaClient,
   now: Date = new Date(),

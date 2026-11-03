@@ -20,6 +20,7 @@ import type {
   PrismaClient,
 } from '@prisma/client';
 
+import { settledOnCard } from '@/lib/finance-cards';
 import { productWhere, type ProductScope } from '@/lib/products';
 import {
   FINANCE_CATEGORY_META,
@@ -140,6 +141,8 @@ interface DbRow extends LedgerRow {
   accountId: string | null;
   accountOwnerPartyId: string | null;
   productId: string | null;
+  settlesAccountId: string | null;
+  cardAllocations: { accountId: string; amount: number }[];
 }
 
 const ROW_SELECT = {
@@ -152,6 +155,8 @@ const ROW_SELECT = {
   partyId: true,
   accountId: true,
   productId: true,
+  settlesAccountId: true,
+  cardAllocations: { select: { accountId: true, amount: true } },
   account: { select: { ownerPartyId: true } },
 } as const;
 
@@ -165,6 +170,8 @@ type RawRow = {
   partyId: string | null;
   accountId: string | null;
   productId: string | null;
+  settlesAccountId: string | null;
+  cardAllocations: { accountId: string; amount: number }[];
   account: { ownerPartyId: string | null } | null;
 };
 
@@ -180,6 +187,8 @@ function toDbRow(row: RawRow): DbRow {
     accountId: row.accountId,
     accountOwnerPartyId: row.account?.ownerPartyId ?? null,
     productId: row.productId,
+    settlesAccountId: row.settlesAccountId,
+    cardAllocations: row.cardAllocations,
   };
 }
 
@@ -238,18 +247,26 @@ export async function loadPartyBalance(
 }
 
 /**
- * All-time balance per account (`opening + ΣIN − ΣOUT`). Used by the
- * accounts page.
+ * All-time balance per account (`opening + ΣIN − ΣOUT`). A card also counts
+ * the bank repayments that settled it, so its balance is minus what is
+ * still owed on it. Used by the accounts page.
  */
 export async function loadAccountBalances(
   db: FinanceDbClient,
 ): Promise<Map<string, number>> {
   const [accounts, rows] = await Promise.all([
     db.financeAccount.findMany({
-      select: { id: true, openingBalance: true },
+      select: { id: true, type: true, openingBalance: true },
     }),
     db.financeTransaction.findMany({
-      select: { accountId: true, direction: true, amount: true },
+      select: {
+        date: true,
+        accountId: true,
+        direction: true,
+        amount: true,
+        settlesAccountId: true,
+        cardAllocations: { select: { accountId: true, amount: true } },
+      },
       where: { accountId: { not: null } },
     }),
   ]);
@@ -262,9 +279,10 @@ export async function loadAccountBalances(
   }
   const out = new Map<string, number>();
   for (const account of accounts) {
+    const own = computeAccountBalance(account.openingBalance, byAccount.get(account.id) ?? []);
     out.set(
       account.id,
-      computeAccountBalance(account.openingBalance, byAccount.get(account.id) ?? []),
+      account.type === 'CREDIT_CARD' ? round2(own + settledOnCard(account.id, rows)) : own,
     );
   }
   return out;
@@ -373,17 +391,23 @@ export async function loadFinanceSummary(
     .map((account) => {
       const flow = accountFlow.get(account.id) ?? { cashIn: 0, cashOut: 0 };
       const allTime = allRows.filter((r) => r.accountId === account.id);
+      // A card's repayments sit on the bank account; count them as the
+      // card's money in so its balance is what is still owed.
+      const card = account.type === 'CREDIT_CARD';
+      const repaidInWindow = card ? settledOnCard(account.id, inWindow) : 0;
+      const repaidAllTime = card ? settledOnCard(account.id, allRows) : 0;
       return {
         accountId: account.id,
         name: account.name,
         type: account.type,
         ownerName: account.ownerParty?.name ?? null,
-        cashIn: Math.round(flow.cashIn * 100) / 100,
+        cashIn: round2(flow.cashIn + repaidInWindow),
         cashOut: Math.round(flow.cashOut * 100) / 100,
-        balance:
-          scope.kind === 'all'
+        balance: round2(
+          (scope.kind === 'all'
             ? computeAccountBalance(account.openingBalance, allTime)
-            : computeAccountBalance(0, allTime),
+            : computeAccountBalance(0, allTime)) + repaidAllTime,
+        ),
       };
     });
 

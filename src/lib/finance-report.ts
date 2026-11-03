@@ -23,7 +23,7 @@ import type {
   PrismaClient,
 } from '@prisma/client';
 
-import { cardLedgerRows } from '@/lib/finance-cards';
+import { settledOnCard } from '@/lib/finance-cards';
 import { productWhere, type ProductScope } from '@/lib/products';
 import {
   FINANCE_CATEGORY_META,
@@ -300,12 +300,7 @@ export function assembleFinanceReport(input: AssembleInput): FinanceReport {
       settlesAccountId: r.settlesAccountId ?? null,
       cardAllocations: r.cardAllocations ?? [],
     }));
-  const settledOn = (cardId: string, rs: readonly ReportSourceRow[]) =>
-    round2(
-      cardLedgerRows(cardId, cardRows(rs))
-        .filter((r) => !r.onCard && r.direction === 'OUT')
-        .reduce((s, r) => s + (r.settlesAmount ?? (r.settlesCard ? r.amount : 0)), 0),
-    );
+  const settledOn = (cardId: string, rs: readonly ReportSourceRow[]) => settledOnCard(cardId, cardRows(rs));
 
   // Accounts: opening = balance before the window; closing = opening + in − out.
   const accounts: ReportAccount[] = input.accounts

@@ -640,7 +640,7 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
             <CardTitle className="text-base">Accounts</CardTitle>
             <CardDescription>
               {productContext.scope.kind === 'all'
-                ? "Balance = opening + money in − money out (all-time). This month's flow alongside."
+                ? "Balance = opening + money in − money out (all-time); a card's money in includes the repayments that settled it. This month's flow alongside."
                 : `What ${scopeText} moved through each account, all-time. The instruments themselves are shared across products.`}
             </CardDescription>
           </CardHeader>

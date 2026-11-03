@@ -12,6 +12,7 @@ import { PATCH as patchAccount } from '@/app/api/finance/accounts/[id]/route';
 import { POST as createTransaction } from '@/app/api/finance/transactions/route';
 import { prisma } from '@/lib/db';
 import { loadCardOverview } from '@/lib/finance-cards';
+import { loadAccountBalances, loadFinanceSummary } from '@/lib/finance-summary';
 
 import {
   buildJsonRequest,
@@ -119,5 +120,19 @@ describe('loadCardOverview', () => {
     expect(card.cycle!.statementDate.toISOString().slice(0, 10)).toBe('2026-09-13');
     expect(card.cycle!.dueDate!.toISOString().slice(0, 10)).toBe('2026-10-01');
     expect(card.daysToDue).toBe(25);
+
+    // The accounts page and the overview show the card's balance as minus
+    // what is still owed (spend − settlements), not minus all it ever spent.
+    expect((await loadAccountBalances(prisma)).get(rbl.id)).toBe(-22000);
+    const summary = await loadFinanceSummary(prisma, {
+      from: new Date('2026-08-01T00:00:00.000Z'),
+      to: new Date('2026-08-31T23:59:59.999Z'),
+    });
+    const row = summary.accounts.find((a) => a.accountId === rbl.id)!;
+    expect(row.balance).toBe(-22000);
+    expect(row.cashIn).toBe(20000); // the 26 Aug settlement
+    expect(row.cashOut).toBe(42000);
+    // The bank still shows both payments going out.
+    expect(summary.accounts.find((a) => a.accountId === bank.id)!.cashOut).toBe(20000);
   });
 });
