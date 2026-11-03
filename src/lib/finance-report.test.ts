@@ -170,6 +170,44 @@ describe('assembleFinanceReport', () => {
     expect(card.closing).toBe(-12977);
   });
 
+  it('a card counts the repayments that settle it, so its closing is what is still owed', () => {
+    const OTHER = 'a-card-2';
+    const r = assembleFinanceReport({
+      company: { name: 'Praxxel Technologies Pvt Ltd', address: 'Delhi' },
+      window: august,
+      accounts: [
+        ...accounts,
+        { id: OTHER, name: 'Second card', type: 'CREDIT_CARD', openingBalance: 0, ownerPartyId: SHUBHAM, ownerName: 'Shubham', isActive: true },
+      ],
+      parties,
+      now: NOW,
+      rows: [
+        row('2026-07-25', 'OUT', 'ADS', 4000, { accountId: CARD, accountOwnerPartyId: SHUBHAM }),
+        row('2026-07-28', 'OUT', 'CARD_REPAYMENT', 1000, { partyId: SHUBHAM, accountId: YES, settlesAccountId: CARD }),
+        row('2026-08-05', 'OUT', 'ADS', 6000, { accountId: CARD, accountOwnerPartyId: SHUBHAM }),
+        row('2026-08-06', 'OUT', 'ADS', 2000, { accountId: OTHER, accountOwnerPartyId: SHUBHAM }),
+        // One bank payment split over both cards.
+        row('2026-08-20', 'OUT', 'CARD_REPAYMENT', 5000, {
+          partyId: SHUBHAM,
+          accountId: YES,
+          cardAllocations: [
+            { accountId: CARD, amount: 3500 },
+            { accountId: OTHER, amount: 1500 },
+          ],
+        }),
+      ],
+    });
+
+    const card = r.accounts.find((a) => a.id === CARD)!;
+    expect([card.opening, card.moneyIn, card.moneyOut, card.closing]).toEqual([-3000, 3500, 6000, -5500]);
+    const other = r.accounts.find((a) => a.id === OTHER)!;
+    expect([other.opening, other.moneyIn, other.moneyOut, other.closing]).toEqual([0, 1500, 2000, -500]);
+    // The bank still shows the whole payment going out.
+    expect(r.accounts.find((a) => a.id === YES)!.moneyOut).toBe(5000);
+    // Cards together equal what the card owner is owed.
+    expect(r.outstanding).toEqual([expect.objectContaining({ partyId: SHUBHAM, cardOutstanding: 6000 })]);
+  });
+
   it('party totals cover the window; owed covers everything up to the window end', () => {
     const shubham = report.parties.find((p) => p.id === SHUBHAM)!;
     expect(shubham.paidTo).toBe(5000);

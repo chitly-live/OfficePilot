@@ -8,7 +8,9 @@
  *
  *   • P&L totals (operating income / expense / net) and gross cash movement
  *   • income and expense by category, financing flows (loans, card settlements)
- *   • per-account opening / in / out / closing for the window
+ *   • per-account opening / in / out / closing for the window — for a card,
+ *     the repayments that settle it count as money in, so closing is what
+ *     is still owed on it
  *   • per-party paid / received in the window and what we still owe them
  *   • the full transaction list for the window
  */
@@ -21,6 +23,7 @@ import type {
   PrismaClient,
 } from '@prisma/client';
 
+import { cardLedgerRows } from '@/lib/finance-cards';
 import { productWhere, type ProductScope } from '@/lib/products';
 import {
   FINANCE_CATEGORY_META,
@@ -134,6 +137,10 @@ export interface ReportSourceRow extends LedgerRow {
   viaPartyName: string | null;
   accountName: string | null;
   productName?: string | null;
+  /** Card this repayment settles (whole amount), when it is not split. */
+  settlesAccountId?: string | null;
+  /** Per-card shares of a split card repayment. */
+  cardAllocations?: { accountId: string; amount: number }[];
 }
 
 export interface ReportSourceAccount {
@@ -280,13 +287,38 @@ export function assembleFinanceReport(input: AssembleInput): FinanceReport {
     assetPurchases: catTotal('ASSET_PURCHASE'),
   };
 
+  // A card is repaid from the bank: that row sits on the bank account, so a
+  // card's own rows are only its spend. Its settlements are added as money
+  // in (split shares or the whole settling amount), or the closing would
+  // show every rupee ever spent on it instead of what is still owed.
+  const cardRows = (rs: readonly ReportSourceRow[]) =>
+    rs.map((r) => ({
+      date: r.date,
+      direction: r.direction,
+      amount: r.amount,
+      accountId: r.accountId ?? null,
+      settlesAccountId: r.settlesAccountId ?? null,
+      cardAllocations: r.cardAllocations ?? [],
+    }));
+  const settledOn = (cardId: string, rs: readonly ReportSourceRow[]) =>
+    round2(
+      cardLedgerRows(cardId, cardRows(rs))
+        .filter((r) => !r.onCard && r.direction === 'OUT')
+        .reduce((s, r) => s + (r.settlesAmount ?? (r.settlesCard ? r.amount : 0)), 0),
+    );
+
   // Accounts: opening = balance before the window; closing = opening + in − out.
   const accounts: ReportAccount[] = input.accounts
     .map((a) => {
       const beforeRows = before.filter((r) => r.accountId === a.id);
       const windowRows = inWindow.filter((r) => r.accountId === a.id);
-      const opening = computeAccountBalance(a.openingBalance, beforeRows);
-      const moneyIn = sumAmounts(windowRows.filter((r) => r.direction === 'IN'));
+      const card = a.type === 'CREDIT_CARD';
+      const opening = round2(
+        computeAccountBalance(a.openingBalance, beforeRows) + (card ? settledOn(a.id, before) : 0),
+      );
+      const moneyIn = round2(
+        sumAmounts(windowRows.filter((r) => r.direction === 'IN')) + (card ? settledOn(a.id, inWindow) : 0),
+      );
       const moneyOut = sumAmounts(windowRows.filter((r) => r.direction === 'OUT'));
       return {
         id: a.id,
@@ -421,6 +453,8 @@ export async function buildFinanceReport(
         reference: true,
         partyId: true,
         accountId: true,
+        settlesAccountId: true,
+        cardAllocations: { select: { accountId: true, amount: true } },
         party: { select: { name: true } },
         viaParty: { select: { name: true } },
         account: { select: { name: true, ownerPartyId: true } },
@@ -472,6 +506,8 @@ export async function buildFinanceReport(
       reference: r.reference,
       partyId: r.partyId,
       accountId: r.accountId,
+      settlesAccountId: r.settlesAccountId,
+      cardAllocations: r.cardAllocations,
       accountOwnerPartyId: r.account?.ownerPartyId ?? null,
       partyName: r.party?.name ?? null,
       viaPartyName: r.viaParty?.name ?? null,
