@@ -378,7 +378,10 @@ describe('computePartyBalance', () => {
     const arbRow = fc.record({
       direction: fc.constantFrom('IN' as const, 'OUT' as const),
       category: fc.constantFrom(...ALL_FINANCE_CATEGORIES),
-      amount: fc.double({ min: 0, max: 1e5, noNaN: true }),
+      // The ledger holds amounts to the paisa (the schema rounds them), so
+      // draw paise. Sub-paisa doubles made each part round on its own and
+      // the sums drift by a paisa, which failed this test now and then.
+      amount: fc.integer({ min: 0, max: 10_000_000 }).map((p) => p / 100),
       partyId: fc.constantFrom(...ids),
       accountId: fc.constant(null),
       accountOwnerPartyId: fc.constantFrom(...ids),

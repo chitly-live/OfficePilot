@@ -24,7 +24,7 @@ import {
   FinancePartyType,
 } from '@prisma/client';
 
-import { categoryDirection, parseDateOnly } from '@/lib/finance';
+import { categoryDirection, parseDateOnly, round2 } from '@/lib/finance';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -97,19 +97,26 @@ const referenceField = z
     `Reference must be ${MAX_REFERENCE_LENGTH} characters or fewer`,
   );
 
-/** Positive INR amount. */
+/**
+ * Positive INR amount, kept to the paisa: finer input is rounded, so the
+ * ledger never holds a fraction of a paisa (card splits, the duplicate check
+ * and reconciliation all compare to the paisa).
+ */
 const amountField = z
   .number()
   .finite('Amount must be a number')
   .positive('Amount must be greater than zero')
-  .max(MAX_AMOUNT, `Amount must be ${MAX_AMOUNT} or less`);
+  .max(MAX_AMOUNT, `Amount must be ${MAX_AMOUNT} or less`)
+  .transform(round2)
+  .refine((v) => v > 0, 'Amount must be at least ₹0.01');
 
-/** Signed INR amount (opening balances may be negative for a card). */
+/** Signed INR amount (opening balances may be negative for a card), to the paisa. */
 const signedAmountField = z
   .number()
   .finite('Amount must be a number')
   .min(-MAX_AMOUNT)
-  .max(MAX_AMOUNT);
+  .max(MAX_AMOUNT)
+  .transform(round2);
 
 /** ISO-4217 code, upper-cased. */
 const currencyField = z
